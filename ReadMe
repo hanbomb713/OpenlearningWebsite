@@ -1,67 +1,47 @@
-def initialize_base_date_options(
-    service: HojinNumberSearchService,
-) -> None:
+# 基準日を親画面の初期状態へ戻す
+st.session_state["search_base_type"] = st.session_state.get(
+    "kensaku_kijunbi_mode",
+    SEARCH_BASE_LATEST,
+)
 
-    current_options = st.session_state.get("_base_date_options", [])
+# radio/selectbox は次回描画前に初期化する
+st.session_state["_reset_search_base_after_clear"] = True
 
-    if (
-        st.session_state.get("_base_date_initialized", False)
-        and current_options
-    ):
-        return
+# 検索結果側の基準年月日はクリア
+st.session_state["_result_base_date"] = ""
 
-    # DBから基準年月一覧取得
-    base_date_rows = service.get_base_date_options()
 
-    options = []
 
-    for row in base_date_rows:
 
-        value = None
 
-        # Snowflake Row
-        if hasattr(row, "as_dict"):
-            row_dict = row.as_dict()
-            value = row_dict.get("BASE_DATE")
+# クリア押下後：基準日の表示状態を親画面の初期状態へ戻す
+if st.session_state.pop("_reset_search_base_after_clear", False):
 
-        # dict
-        elif isinstance(row, dict):
-            value = row.get("BASE_DATE")
-
-        # Row["BASE_DATE"]
-        else:
-            try:
-                value = row["BASE_DATE"]
-            except (KeyError, TypeError):
-                try:
-                    value = row[0]
-                except (IndexError, TypeError):
-                    value = None
-
-        if value is not None:
-            value = str(value).strip()
-
-            if value and value not in options:
-                options.append(value)
-
-    # YYYY/MMなら文字列ソートでOK
-    options.sort(reverse=True)
-
-    st.session_state["_base_date_options"] = options
-
-    # 親画面の基準年月
-    parent_base_date = service.format_base_month(
-        st.session_state.get("kensaku_kijunbi", "")
+    initial_base_type = st.session_state.get(
+        "kensaku_kijunbi_mode",
+        SEARCH_BASE_LATEST,
     )
 
-    # 初期選択値
-    if parent_base_date in options:
-        st.session_state["base_date"] = parent_base_date
+    st.session_state["search_base_type"] = initial_base_type
 
-    elif options:
-        st.session_state["base_date"] = options[0]
-
-    else:
+    if initial_base_type == SEARCH_BASE_LATEST:
+        # 親画面が「最新」
+        st.session_state["_search_base_radio"] = "最新"
         st.session_state["base_date"] = ""
 
-    st.session_state["_base_date_initialized"] = True
+    else:
+        # 親画面が「月末・期末」
+        st.session_state["_search_base_radio"] = "月末・期末"
+
+        options = st.session_state.get("_base_date_options", [])
+
+        parent_base_date = service.format_base_month(
+            st.session_state.get("kensaku_kijunbi", "")
+        )
+
+        if parent_base_date and parent_base_date in options:
+            st.session_state["base_date"] = parent_base_date
+        elif options:
+            st.session_state["base_date"] = options[0]
+        else:
+            st.session_state["base_date"] = ""
