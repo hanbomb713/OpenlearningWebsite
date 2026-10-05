@@ -1,64 +1,42 @@
-def sync_parent_base_date_state() -> None:
-    # 父画面的实际 radio
-    parent_radio = st.session_state.get("gld11_date_radio_ui", "")
-
-    # 父画面的实际年月 selectbox
-    parent_base_date = st.session_state.get("gld11_kijunbi_ym_ui", "")
-
-    # 如果能取得父画面的控件状态，优先以控件状态为准
-    if parent_radio:
-        if "月末" in str(parent_radio) or "期末" in str(parent_radio):
-            st.session_state["search_base_type"] = SEARCH_BASE_MONTH_END
-            st.session_state["_search_base_radio"] = "月末・期末"
-
-            formatted = HojinNumberSearchService.format_base_month(
-                parent_base_date
-            )
-            st.session_state["base_date"] = formatted
-
-        else:
-            st.session_state["search_base_type"] = SEARCH_BASE_LATEST
-            st.session_state["_search_base_radio"] = "最新"
-            st.session_state["base_date"] = ""
-
-        return
-
-    # 父控件key取不到时，才使用原来的传递值
-    search_base_type = st.session_state.get(
-        "kensaku_kijunbi_mode",
-        SEARCH_BASE_LATEST,
-    )
-
-    st.session_state["search_base_type"] = search_base_type
-
-    if search_base_type == SEARCH_BASE_MONTH_END:
-        st.session_state["_search_base_radio"] = "月末・期末"
-        st.session_state["base_date"] = (
-            HojinNumberSearchService.format_base_month(
-                st.session_state.get("kensaku_kijunbi", "")
-            )
-        )
-    else:
-        st.session_state["_search_base_radio"] = "最新"
-        st.session_state["base_date"] = ""
+INSERT INTO MAIN_H.SILVER_4.T456SMDD0010
+SELECT * REPLACE (
+    '777777' AS HOJIN_NO,
+    '770001' AS NAYOSE_HOJIN_NO,
+    '770002' AS TOP_CO_HOJIN_NO,
+    '770003' AS OYA_CO_HOJIN_NO
+)
+FROM MAIN_H.SILVER_4.T456SMDD0010
+WHERE TRIM(HOJIN_NO) = '232003';
 
 
+INSERT INTO MAIN_H.SILVER_4.T456SMDD0010
+SELECT * REPLACE (
+    '777002' AS HOJIN_NO,
+    '777777' AS NAYOSE_HOJIN_NO,
+    '770012' AS TOP_CO_HOJIN_NO,
+    '770013' AS OYA_CO_HOJIN_NO
+)
+FROM MAIN_H.SILVER_4.T456SMDD0010
+WHERE TRIM(HOJIN_NO) = '232003';
 
 
-init_session_state()
+INSERT INTO MAIN_H.SILVER_4.T456SMDD0010
+SELECT * REPLACE (
+    '777003' AS HOJIN_NO,
+    '770021' AS NAYOSE_HOJIN_NO,
+    '777777' AS TOP_CO_HOJIN_NO,
+    '770023' AS OYA_CO_HOJIN_NO
+)
+FROM MAIN_H.SILVER_4.T456SMDD0010
+WHERE TRIM(HOJIN_NO) = '232003';
 
-st.session_state[SESSION_KEY.SS_KEY_GAMEN_NAME] = "法人DM 法人番号検索"
-service = create_service()
 
-if not st.session_state.get("_master_initialized", False):
-    with st.spinner("..."):
-        initialize_master_data(service)
-else:
-    initialize_master_data(service)
-
-initialize_base_date_options(service)
-
-# ★ 每次打开Popup，都重新读取父画面的当前基準日状态
-sync_parent_base_date_state()
-
-render_filter_area(service)
+INSERT INTO MAIN_H.SILVER_4.T456SMDD0010
+SELECT * REPLACE (
+    '777004' AS HOJIN_NO,
+    '770031' AS NAYOSE_HOJIN_NO,
+    '770032' AS TOP_CO_HOJIN_NO,
+    '777777' AS OYA_CO_HOJIN_NO
+)
+FROM MAIN_H.SILVER_4.T456SMDD0010
+WHERE TRIM(HOJIN_NO) = '232003';
