@@ -1,47 +1,64 @@
-# 基準日を親画面の初期状態へ戻す
-st.session_state["search_base_type"] = st.session_state.get(
-    "kensaku_kijunbi_mode",
-    SEARCH_BASE_LATEST,
-)
+def sync_parent_base_date_state() -> None:
+    # 父画面的实际 radio
+    parent_radio = st.session_state.get("gld11_date_radio_ui", "")
 
-# radio/selectbox は次回描画前に初期化する
-st.session_state["_reset_search_base_after_clear"] = True
+    # 父画面的实际年月 selectbox
+    parent_base_date = st.session_state.get("gld11_kijunbi_ym_ui", "")
 
-# 検索結果側の基準年月日はクリア
-st.session_state["_result_base_date"] = ""
+    # 如果能取得父画面的控件状态，优先以控件状态为准
+    if parent_radio:
+        if "月末" in str(parent_radio) or "期末" in str(parent_radio):
+            st.session_state["search_base_type"] = SEARCH_BASE_MONTH_END
+            st.session_state["_search_base_radio"] = "月末・期末"
 
+            formatted = HojinNumberSearchService.format_base_month(
+                parent_base_date
+            )
+            st.session_state["base_date"] = formatted
 
+        else:
+            st.session_state["search_base_type"] = SEARCH_BASE_LATEST
+            st.session_state["_search_base_radio"] = "最新"
+            st.session_state["base_date"] = ""
 
+        return
 
-
-# クリア押下後：基準日の表示状態を親画面の初期状態へ戻す
-if st.session_state.pop("_reset_search_base_after_clear", False):
-
-    initial_base_type = st.session_state.get(
+    # 父控件key取不到时，才使用原来的传递值
+    search_base_type = st.session_state.get(
         "kensaku_kijunbi_mode",
         SEARCH_BASE_LATEST,
     )
 
-    st.session_state["search_base_type"] = initial_base_type
+    st.session_state["search_base_type"] = search_base_type
 
-    if initial_base_type == SEARCH_BASE_LATEST:
-        # 親画面が「最新」
+    if search_base_type == SEARCH_BASE_MONTH_END:
+        st.session_state["_search_base_radio"] = "月末・期末"
+        st.session_state["base_date"] = (
+            HojinNumberSearchService.format_base_month(
+                st.session_state.get("kensaku_kijunbi", "")
+            )
+        )
+    else:
         st.session_state["_search_base_radio"] = "最新"
         st.session_state["base_date"] = ""
 
-    else:
-        # 親画面が「月末・期末」
-        st.session_state["_search_base_radio"] = "月末・期末"
 
-        options = st.session_state.get("_base_date_options", [])
 
-        parent_base_date = service.format_base_month(
-            st.session_state.get("kensaku_kijunbi", "")
-        )
 
-        if parent_base_date and parent_base_date in options:
-            st.session_state["base_date"] = parent_base_date
-        elif options:
-            st.session_state["base_date"] = options[0]
-        else:
-            st.session_state["base_date"] = ""
+init_session_state()
+
+st.session_state[SESSION_KEY.SS_KEY_GAMEN_NAME] = "法人DM 法人番号検索"
+service = create_service()
+
+if not st.session_state.get("_master_initialized", False):
+    with st.spinner("..."):
+        initialize_master_data(service)
+else:
+    initialize_master_data(service)
+
+initialize_base_date_options(service)
+
+# ★ 每次打开Popup，都重新读取父画面的当前基準日状态
+sync_parent_base_date_state()
+
+render_filter_area(service)
