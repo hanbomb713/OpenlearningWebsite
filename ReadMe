@@ -1,32 +1,38 @@
 def sync_parent_base_date_state() -> None:
-    # popup打开后只从父画面同步一次
-    if st.session_state.get("_search_base_initialized", False):
+    # 父画面每次打开popup时都会+1
+    open_seq = st.session_state.get("hojin_search_open_seq", 0)
+
+    # 当前这次打开已经同步过，就不要重复同步
+    if st.session_state.get("_synced_open_seq") == open_seq:
         return
 
-    # -----------------------------
-    # GLD11父画面判定
-    # -----------------------------
+    # GLD11父画面
     is_gld11_parent = (
         "gld11_date_radio" in st.session_state
         or "gld11_kijunbi_ym" in st.session_state
     )
 
     if is_gld11_parent:
-        # GLD11允许子画面手动切换 最新 / 月末・期末
         st.session_state["_allow_month_end"] = True
 
-        # ★ 父画面已经把最终值放到这两个key里
-        parent_mode = st.session_state.get("kensaku_kijunbi_mode")
-        parent_base_date = st.session_state.get("kensaku_kijunbi", "")
+        # 父画面在打开popup之前已经整理好的值
+        parent_base_date = st.session_state.get(
+            "kensaku_kijunbi",
+            ""
+        )
 
-        # ★ 父画面是「最新」时，kensaku_kijunbi一定为空
+        # -------------------------
+        # 最新
+        # -------------------------
         if not parent_base_date:
             st.session_state["search_base_type"] = SEARCH_BASE_LATEST
             st.session_state["_search_base_radio"] = "最新"
             st.session_state["base_date"] = ""
             st.session_state["_result_base_date"] = ""
 
-        # ★ 有年月就是「月末・期末」
+        # -------------------------
+        # 月末・期末
+        # -------------------------
         else:
             st.session_state["search_base_type"] = SEARCH_BASE_MONTH_END
             st.session_state["_search_base_radio"] = "月末・期末"
@@ -40,11 +46,12 @@ def sync_parent_base_date_state() -> None:
             st.session_state["_result_base_date"] = ""
 
     else:
-        # 另一个父画面：只允许最新
+        # 另一个父画面：只有最新
         st.session_state["_allow_month_end"] = False
         st.session_state["search_base_type"] = SEARCH_BASE_LATEST
         st.session_state["_search_base_radio"] = "最新"
         st.session_state["base_date"] = ""
         st.session_state["_result_base_date"] = ""
 
-    st.session_state["_search_base_initialized"] = True
+    # ★ 标记“这一次popup打开已经同步完成”
+    st.session_state["_synced_open_seq"] = open_seq
