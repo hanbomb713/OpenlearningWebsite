@@ -1,57 +1,43 @@
-def sync_parent_base_date_state() -> None:
-    # 父画面每次打开popup时都会+1
-    open_seq = st.session_state.get("hojin_search_open_seq", 0)
+def on_search_base_change() -> None:
+    st.session_state["_active_search_tab"] = "条件2 Condition2"
 
-    # 当前这次打开已经同步过，就不要重复同步
-    if st.session_state.get("_synced_open_seq") == open_seq:
-        return
+    label = st.session_state.get("_search_base_radio", "最新")
 
-    # GLD11父画面
-    is_gld11_parent = (
-        "gld11_date_radio" in st.session_state
-        or "gld11_kijunbi_ym" in st.session_state
-    )
+    if label == "月末・期末":
+        st.session_state["search_base_type"] = SEARCH_BASE_MONTH_END
 
-    if is_gld11_parent:
-        st.session_state["_allow_month_end"] = True
+        options = st.session_state.get("_base_date_options", [])
 
-        # 父画面在打开popup之前已经整理好的值
-        parent_base_date = st.session_state.get(
-            "kensaku_kijunbi",
+        # 切回月末・期末时，优先恢复刚才手动选择过的日期
+        last_base_date = st.session_state.get(
+            "_last_month_end_base_date",
             ""
         )
 
-        # -------------------------
-        # 最新
-        # -------------------------
-        if not parent_base_date:
-            st.session_state["search_base_type"] = SEARCH_BASE_LATEST
-            st.session_state["_search_base_radio"] = "最新"
-            st.session_state["base_date"] = ""
-            st.session_state["_result_base_date"] = ""
-
-        # -------------------------
-        # 月末・期末
-        # -------------------------
+        if last_base_date and last_base_date in options:
+            st.session_state["base_date"] = last_base_date
+        elif options:
+            st.session_state["base_date"] = options[0]
         else:
-            st.session_state["search_base_type"] = SEARCH_BASE_MONTH_END
-            st.session_state["_search_base_radio"] = "月末・期末"
-
-            st.session_state["base_date"] = (
-                HojinNumberSearchService.format_base_month(
-                    parent_base_date
-                )
-            )
-
-            st.session_state["_result_base_date"] = ""
+            st.session_state["base_date"] = ""
 
     else:
-        # 另一个父画面：只有最新
-        st.session_state["_allow_month_end"] = False
-        st.session_state["search_base_type"] = SEARCH_BASE_LATEST
-        st.session_state["_search_base_radio"] = "最新"
-        st.session_state["base_date"] = ""
-        st.session_state["_result_base_date"] = ""
+        # 从月末・期末切换到最新之前，
+        # 先把当前日期保存起来
+        current_base_date = st.session_state.get("base_date", "")
 
-    # ★ 标记“这一次popup打开已经同步完成”
-    st.session_state["_synced_open_seq"] = open_seq
+        if current_base_date:
+            st.session_state["_last_month_end_base_date"] = current_base_date
+
+        st.session_state["search_base_type"] = SEARCH_BASE_LATEST
+        st.session_state["base_date"] = ""
+
+
+
+
+def on_base_date_change() -> None:
+    st.session_state["_active_search_tab"] = "条件2 Condition2"
+
+    st.session_state["_last_month_end_base_date"] = (
+        st.session_state.get("base_date", "")
+    )
