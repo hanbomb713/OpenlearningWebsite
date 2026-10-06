@@ -1,32 +1,38 @@
-def sync_parent_base_date_state(force: bool = False) -> None:
-    # popup 已经初始化过，而且不是强制重读时，不再覆盖用户在子画面的操作
-    if (
-        st.session_state.get("_search_base_initialized", False)
-        and not force
-    ):
+def sync_parent_base_date_state() -> None:
+    if st.session_state.get("_search_base_initialized", False):
         return
 
-    # GLD11 父画面
+    # GLD11親画面かどうか
     is_gld11_parent = (
         "gld11_date_radio_ui" in st.session_state
         or "gld11_kijunbi_ym_ui" in st.session_state
     )
 
     if is_gld11_parent:
+        st.session_state["_allow_month_end"] = True
+
+        # ★ GLD11では実際の親画面Radioを最優先で見る
         parent_radio = st.session_state.get(
             "gld11_date_radio_ui",
             ""
         )
-        parent_base_date = st.session_state.get(
-            "gld11_kijunbi_ym_ui",
-            ""
-        )
 
-        st.session_state["_allow_month_end"] = True
+        parent_radio_str = str(parent_radio)
 
-        if "月末" in str(parent_radio) or "期末" in str(parent_radio):
+        # -----------------------------
+        # 親画面：月末・期末
+        # -----------------------------
+        if (
+            "月末" in parent_radio_str
+            or "期末" in parent_radio_str
+        ):
             st.session_state["search_base_type"] = SEARCH_BASE_MONTH_END
             st.session_state["_search_base_radio"] = "月末・期末"
+
+            parent_base_date = (
+                st.session_state.get("gld11_kijunbi_ym_ui", "")
+                or st.session_state.get("kensaku_kijunbi", "")
+            )
 
             st.session_state["base_date"] = (
                 HojinNumberSearchService.format_base_month(
@@ -34,48 +40,53 @@ def sync_parent_base_date_state(force: bool = False) -> None:
                 )
             )
 
-        else:
+        # -----------------------------
+        # 親画面：最新
+        # -----------------------------
+        elif "最新" in parent_radio_str:
             st.session_state["search_base_type"] = SEARCH_BASE_LATEST
             st.session_state["_search_base_radio"] = "最新"
+
+            # ★ 以前の月末・期末年月を必ず消す
             st.session_state["base_date"] = ""
+            st.session_state["_result_base_date"] = ""
+
+        # -----------------------------
+        # UI値が取れない場合だけ業務値へfallback
+        # -----------------------------
+        else:
+            parent_base_type = st.session_state.get(
+                "kensaku_kijunbi_mode",
+                SEARCH_BASE_LATEST,
+            )
+
+            if parent_base_type == SEARCH_BASE_MONTH_END:
+                st.session_state["search_base_type"] = SEARCH_BASE_MONTH_END
+                st.session_state["_search_base_radio"] = "月末・期末"
+
+                parent_base_date = st.session_state.get(
+                    "kensaku_kijunbi",
+                    ""
+                )
+
+                st.session_state["base_date"] = (
+                    HojinNumberSearchService.format_base_month(
+                        parent_base_date
+                    )
+                )
+
+            else:
+                st.session_state["search_base_type"] = SEARCH_BASE_LATEST
+                st.session_state["_search_base_radio"] = "最新"
+                st.session_state["base_date"] = ""
+                st.session_state["_result_base_date"] = ""
 
     else:
-        # 另一个父画面：最新固定
+        # もう一つの親画面：最新固定
         st.session_state["_allow_month_end"] = False
         st.session_state["search_base_type"] = SEARCH_BASE_LATEST
         st.session_state["_search_base_radio"] = "最新"
         st.session_state["base_date"] = ""
-
-    # 検索結果表示用も一旦クリア
-    st.session_state["_result_base_date"] = ""
+        st.session_state["_result_base_date"] = ""
 
     st.session_state["_search_base_initialized"] = True
-
-
-
-
-def handle_cancel() -> None:
-    clear_click()
-
-    st.session_state["_list_visible"] = False
-    st.session_state["selected"] = []
-    st.session_state["_active_search_tab"] = "条件1 Condition1"
-
-    # popup 初期化状态を破棄
-    st.session_state["_popup_initialized"] = False
-    st.session_state["_search_base_initialized"] = False
-
-    # ★ 子画面側に残っている基準日状態も破棄する
-    st.session_state.pop("_search_base_radio", None)
-    st.session_state.pop("search_base_type", None)
-    st.session_state.pop("base_date", None)
-    st.session_state.pop("_result_base_date", None)
-
-    # 選択結果は親画面へ渡さない
-    st.session_state["_select_requested"] = False
-    st.session_state["_cancel_requested"] = True
-
-    st.session_state.pop(
-        SESSION_KEY.SS_KEY_GAMEN_NAME,
-        None
-    )
