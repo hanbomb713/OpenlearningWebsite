@@ -1,38 +1,35 @@
 def sync_parent_base_date_state() -> None:
+    # popup打开后只从父画面同步一次
     if st.session_state.get("_search_base_initialized", False):
         return
 
-    # GLD11親画面かどうか
+    # -----------------------------
+    # GLD11父画面判定
+    # -----------------------------
     is_gld11_parent = (
-        "gld11_date_radio_ui" in st.session_state
-        or "gld11_kijunbi_ym_ui" in st.session_state
+        "gld11_date_radio" in st.session_state
+        or "gld11_kijunbi_ym" in st.session_state
     )
 
     if is_gld11_parent:
+        # GLD11允许子画面手动切换 最新 / 月末・期末
         st.session_state["_allow_month_end"] = True
 
-        # ★ GLD11では実際の親画面Radioを最優先で見る
-        parent_radio = st.session_state.get(
-            "gld11_date_radio_ui",
-            ""
-        )
+        # ★ 父画面已经把最终值放到这两个key里
+        parent_mode = st.session_state.get("kensaku_kijunbi_mode")
+        parent_base_date = st.session_state.get("kensaku_kijunbi", "")
 
-        parent_radio_str = str(parent_radio)
+        # ★ 父画面是「最新」时，kensaku_kijunbi一定为空
+        if not parent_base_date:
+            st.session_state["search_base_type"] = SEARCH_BASE_LATEST
+            st.session_state["_search_base_radio"] = "最新"
+            st.session_state["base_date"] = ""
+            st.session_state["_result_base_date"] = ""
 
-        # -----------------------------
-        # 親画面：月末・期末
-        # -----------------------------
-        if (
-            "月末" in parent_radio_str
-            or "期末" in parent_radio_str
-        ):
+        # ★ 有年月就是「月末・期末」
+        else:
             st.session_state["search_base_type"] = SEARCH_BASE_MONTH_END
             st.session_state["_search_base_radio"] = "月末・期末"
-
-            parent_base_date = (
-                st.session_state.get("gld11_kijunbi_ym_ui", "")
-                or st.session_state.get("kensaku_kijunbi", "")
-            )
 
             st.session_state["base_date"] = (
                 HojinNumberSearchService.format_base_month(
@@ -40,49 +37,10 @@ def sync_parent_base_date_state() -> None:
                 )
             )
 
-        # -----------------------------
-        # 親画面：最新
-        # -----------------------------
-        elif "最新" in parent_radio_str:
-            st.session_state["search_base_type"] = SEARCH_BASE_LATEST
-            st.session_state["_search_base_radio"] = "最新"
-
-            # ★ 以前の月末・期末年月を必ず消す
-            st.session_state["base_date"] = ""
             st.session_state["_result_base_date"] = ""
 
-        # -----------------------------
-        # UI値が取れない場合だけ業務値へfallback
-        # -----------------------------
-        else:
-            parent_base_type = st.session_state.get(
-                "kensaku_kijunbi_mode",
-                SEARCH_BASE_LATEST,
-            )
-
-            if parent_base_type == SEARCH_BASE_MONTH_END:
-                st.session_state["search_base_type"] = SEARCH_BASE_MONTH_END
-                st.session_state["_search_base_radio"] = "月末・期末"
-
-                parent_base_date = st.session_state.get(
-                    "kensaku_kijunbi",
-                    ""
-                )
-
-                st.session_state["base_date"] = (
-                    HojinNumberSearchService.format_base_month(
-                        parent_base_date
-                    )
-                )
-
-            else:
-                st.session_state["search_base_type"] = SEARCH_BASE_LATEST
-                st.session_state["_search_base_radio"] = "最新"
-                st.session_state["base_date"] = ""
-                st.session_state["_result_base_date"] = ""
-
     else:
-        # もう一つの親画面：最新固定
+        # 另一个父画面：只允许最新
         st.session_state["_allow_month_end"] = False
         st.session_state["search_base_type"] = SEARCH_BASE_LATEST
         st.session_state["_search_base_radio"] = "最新"
