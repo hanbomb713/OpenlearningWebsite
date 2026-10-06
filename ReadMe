@@ -1,126 +1,81 @@
-INSERT INTO MAIN_H.SILVER_4.T456SMDD010
-WITH SRC AS (
-    SELECT *
-    FROM MAIN_H.SILVER_4.T456SMDD010
-    WHERE HOJIN_NO = '232003'
-    QUALIFY ROW_NUMBER() OVER (
-        ORDER BY KIJUN_YMD DESC
-    ) = 1
-)
-SELECT * REPLACE (
-    '555001' AS HOJIN_NO,
-    '955001' AS NAYOSE_HOJIN_NO,
-    '955002' AS TOP_CO_HOJIN_NO,
-    '955003' AS OYA_CO_HOJIN_NO,
-    'テスト全法人５５５００１' AS KANJI_FULL_NAME
-)
-FROM SRC
+def sync_parent_base_date_state(force: bool = False) -> None:
+    # popup 已经初始化过，而且不是强制重读时，不再覆盖用户在子画面的操作
+    if (
+        st.session_state.get("_search_base_initialized", False)
+        and not force
+    ):
+        return
 
-UNION ALL
-
-SELECT * REPLACE (
-    '555002' AS HOJIN_NO,
-    '555002' AS NAYOSE_HOJIN_NO,
-    '955012' AS TOP_CO_HOJIN_NO,
-    '955013' AS OYA_CO_HOJIN_NO,
-    'テスト名寄法人５５５００２' AS KANJI_FULL_NAME
-)
-FROM SRC
-
-UNION ALL
-
-SELECT * REPLACE (
-    '555003' AS HOJIN_NO,
-    '955021' AS NAYOSE_HOJIN_NO,
-    '555003' AS TOP_CO_HOJIN_NO,
-    '955023' AS OYA_CO_HOJIN_NO,
-    'テスト頂点法人５５５００３' AS KANJI_FULL_NAME
-)
-FROM SRC
-
-UNION ALL
-
-SELECT * REPLACE (
-    '555004' AS HOJIN_NO,
-    '955031' AS NAYOSE_HOJIN_NO,
-    '955032' AS TOP_CO_HOJIN_NO,
-    '555004' AS OYA_CO_HOJIN_NO,
-    'テスト親法人５５５００４' AS KANJI_FULL_NAME
-)
-FROM SRC;
-
-
-
-
-
-INSERT INTO MAIN_H.SILVER_4.T456SMDD020
-WITH SRC AS (
-    SELECT *
-    FROM MAIN_H.SILVER_4.T456SMDD020
-    WHERE KIJUN_YMD = (
-        SELECT MAX(KIJUN_YMD)
-        FROM MAIN_H.SILVER_4.T456SMDD010
+    # GLD11 父画面
+    is_gld11_parent = (
+        "gld11_date_radio_ui" in st.session_state
+        or "gld11_kijunbi_ym_ui" in st.session_state
     )
-    QUALIFY ROW_NUMBER() OVER (
-        ORDER BY HOJIN_NO, MEIGI_NO
-    ) = 1
-)
-SELECT * REPLACE (
-    '555001' AS HOJIN_NO,
-    '5555550001' AS MEIGI_NO
-)
-FROM SRC
 
-UNION ALL
+    if is_gld11_parent:
+        parent_radio = st.session_state.get(
+            "gld11_date_radio_ui",
+            ""
+        )
+        parent_base_date = st.session_state.get(
+            "gld11_kijunbi_ym_ui",
+            ""
+        )
 
-SELECT * REPLACE (
-    '555002' AS HOJIN_NO,
-    '5555550002' AS MEIGI_NO
-)
-FROM SRC
+        st.session_state["_allow_month_end"] = True
 
-UNION ALL
+        if "月末" in str(parent_radio) or "期末" in str(parent_radio):
+            st.session_state["search_base_type"] = SEARCH_BASE_MONTH_END
+            st.session_state["_search_base_radio"] = "月末・期末"
 
-SELECT * REPLACE (
-    '555003' AS HOJIN_NO,
-    '5555550003' AS MEIGI_NO
-)
-FROM SRC
+            st.session_state["base_date"] = (
+                HojinNumberSearchService.format_base_month(
+                    parent_base_date
+                )
+            )
 
-UNION ALL
+        else:
+            st.session_state["search_base_type"] = SEARCH_BASE_LATEST
+            st.session_state["_search_base_radio"] = "最新"
+            st.session_state["base_date"] = ""
 
-SELECT * REPLACE (
-    '555004' AS HOJIN_NO,
-    '5555550004' AS MEIGI_NO
-)
-FROM SRC;
+    else:
+        # 另一个父画面：最新固定
+        st.session_state["_allow_month_end"] = False
+        st.session_state["search_base_type"] = SEARCH_BASE_LATEST
+        st.session_state["_search_base_radio"] = "最新"
+        st.session_state["base_date"] = ""
 
+    # 検索結果表示用も一旦クリア
+    st.session_state["_result_base_date"] = ""
 
-
-
-SELECT
-    HOJIN_NO,
-    NAYOSE_HOJIN_NO,
-    TOP_CO_HOJIN_NO,
-    OYA_CO_HOJIN_NO,
-    KANJI_FULL_NAME,
-    KIJUN_YMD
-FROM MAIN_H.SILVER_4.T456SMDD010
-WHERE HOJIN_NO IN ('555001', '555002', '555003', '555004')
-ORDER BY HOJIN_NO;
+    st.session_state["_search_base_initialized"] = True
 
 
 
 
-SELECT
-    HOJIN_NO,
-    MEIGI_NO,
-    KIJUN_YMD
-FROM MAIN_H.SILVER_4.T456SMDD020
-WHERE MEIGI_NO IN (
-    '5555550001',
-    '5555550002',
-    '5555550003',
-    '5555550004'
-)
-ORDER BY MEIGI_NO;
+def handle_cancel() -> None:
+    clear_click()
+
+    st.session_state["_list_visible"] = False
+    st.session_state["selected"] = []
+    st.session_state["_active_search_tab"] = "条件1 Condition1"
+
+    # popup 初期化状态を破棄
+    st.session_state["_popup_initialized"] = False
+    st.session_state["_search_base_initialized"] = False
+
+    # ★ 子画面側に残っている基準日状態も破棄する
+    st.session_state.pop("_search_base_radio", None)
+    st.session_state.pop("search_base_type", None)
+    st.session_state.pop("base_date", None)
+    st.session_state.pop("_result_base_date", None)
+
+    # 選択結果は親画面へ渡さない
+    st.session_state["_select_requested"] = False
+    st.session_state["_cancel_requested"] = True
+
+    st.session_state.pop(
+        SESSION_KEY.SS_KEY_GAMEN_NAME,
+        None
+    )
