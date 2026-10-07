@@ -1,45 +1,76 @@
-def clear_popup_search_state() -> None:
-    # Condition1
-    for key in [
-        "hojin_number_kensaku",
-        "account_holder_id",
-        "kana_name",
-        "kanji_short_name",
-        "kanji_name",
-        "english_short_name",
-        "english_name",
-    ]:
-        st.session_state[key] = ""
+本店所在国       AB
+日銀業種         0101000
+受信業種         0100
+主業種海外業種   A0101
 
-    # Condition2
-    condition2_pairs = [
-        ("country_of_head_office", "country_of_head_office_select"),
-        ("final_country_risk", "final_country_risk_select"),
-        ("bank_of_japan_industry", "bank_of_japan_industry_select"),
-        ("main_branch", "main_branch_select"),
-        ("receiving_industry", "receiving_industry_select"),
-        ("overseas_industry", "overseas_industry_select"),
-        ("primary_overseas_industry", "primary_overseas_industry_select"),
-        ("secondary_overseas_industry", "secondary_overseas_industry_select"),
-    ]
+最終CountryRisk  AB
+主管店           007
+海外業態         0000
+従業種海外業種   A0102
 
-    for text_key, select_key in condition2_pairs:
-        # 業務state
-        st.session_state[text_key] = ""
-        st.session_state[select_key] = LABEL_NONE
 
-        # widget state
-        st.session_state[f"_cond2_text_{text_key}"] = ""
-        st.session_state[f"_cond2_select_{select_key}"] = LABEL_NONE
+UPDATE MAIN_H.SILVER_4.T456SMDD010
+SET
+    HONTEN_SHOZAIKOKU_CD      = 'AB',
+    SAISHU_COUNTRY_RISK_CD_1  = 'AB',
+    NICHIGIN_GYOSHU_CD        = '0101000',
+    SHUKAN_TEMBAN             = '007',
+    JUSHIN_GYOSHU_CD          = '0100',
+    KAIGAI_GYOTAI_CD          = '0000',
+    KAIGAI_SHUGYOSHU_CD       = 'A0101',
+    KAIGAI_JUGYOSHU_CD        = 'A0102'
+WHERE HOJIN_NO = '666002'
+  AND KIJUN_YMD = '20260902';
 
-    # 检索结果相关
-    st.session_state["search_result"] = []
-    st.session_state["selected"] = []
-    st.session_state["_list_visible"] = False
-    st.session_state["_search_error"] = False
 
-    st.session_state["process_msg"] = ""
-    st.session_state["error_msg"] = ""
 
-    # 
-    st.session_state["_result_base_date"] = ""
+本店所在国       AC
+日銀業種         0101010
+受信業種         0108
+主業種海外業種   A0102
+
+最終CountryRisk  AD
+主管店           023
+海外業態         0100
+従業種海外業種   A0103
+
+
+UPDATE MAIN_H.SILVER_4.T456SMDD010
+SET
+    HONTEN_SHOZAIKOKU_CD      = 'AC',
+    SAISHU_COUNTRY_RISK_CD_1  = 'AD',
+    NICHIGIN_GYOSHU_CD        = '0101010',
+    SHUKAN_TEMBAN             = '023',
+    JUSHIN_GYOSHU_CD          = '0108',
+    KAIGAI_GYOTAI_CD          = '0100',
+    KAIGAI_SHUGYOSHU_CD       = 'A0102',
+    KAIGAI_JUGYOSHU_CD        = 'A0103'
+WHERE HOJIN_NO = '666003'
+  AND KIJUN_YMD = '20260902';
+
+
+
+本店所在国       AC
+日銀業種         0105000
+受信業種         0109
+主業種海外業種   A0101
+
+最終CountryRisk  AC
+主管店           025
+海外業態         0100
+従業種海外業種   A0103
+
+
+
+UPDATE MAIN_H.SILVER_4.T456SMDD010
+SET
+    HONTEN_SHOZAIKOKU_CD      = 'AC',
+    SAISHU_COUNTRY_RISK_CD_1  = 'AC',
+    NICHIGIN_GYOSHU_CD        = '0105000',
+    SHUKAN_TEMBAN             = '025',
+    JUSHIN_GYOSHU_CD          = '0109',
+    KAIGAI_GYOTAI_CD          = '0100',
+    KAIGAI_SHUGYOSHU_CD       = 'A0101',
+    KAIGAI_JUGYOSHU_CD        = 'A0103'
+WHERE HOJIN_NO = '666004'
+  AND KIJUN_YMD = '20260902';
