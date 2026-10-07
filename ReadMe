@@ -1,23 +1,45 @@
-if results:
-    if st.session_state.get("search_base_type") == SEARCH_BASE_LATEST:
-        first_row = results[0]
+def clear_popup_search_state() -> None:
+    # Condition1
+    for key in [
+        "hojin_number_kensaku",
+        "account_holder_id",
+        "kana_name",
+        "kanji_short_name",
+        "kanji_name",
+        "english_short_name",
+        "english_name",
+    ]:
+        st.session_state[key] = ""
 
-        if isinstance(first_row, dict):
-            result_base_date = first_row.get("DATA_KIJUN_YMD", "")
-        else:
-            result_base_date = getattr(first_row, "DATA_KIJUN_YMD", "")
+    # Condition2
+    condition2_pairs = [
+        ("country_of_head_office", "country_of_head_office_select"),
+        ("final_country_risk", "final_country_risk_select"),
+        ("bank_of_japan_industry", "bank_of_japan_industry_select"),
+        ("main_branch", "main_branch_select"),
+        ("receiving_industry", "receiving_industry_select"),
+        ("overseas_industry", "overseas_industry_select"),
+        ("primary_overseas_industry", "primary_overseas_industry_select"),
+        ("secondary_overseas_industry", "secondary_overseas_industry_select"),
+    ]
 
-        result_base_date = str(result_base_date or "").strip()
+    for text_key, select_key in condition2_pairs:
+        # 業務state
+        st.session_state[text_key] = ""
+        st.session_state[select_key] = LABEL_NONE
 
-        # 20260902 -> 2026/09/02
-        if len(result_base_date) == 8 and result_base_date.isdigit():
-            result_base_date = (
-                f"{result_base_date[0:4]}/"
-                f"{result_base_date[4:6]}/"
-                f"{result_base_date[6:8]}"
-            )
+        # widget state
+        st.session_state[f"_cond2_text_{text_key}"] = ""
+        st.session_state[f"_cond2_select_{select_key}"] = LABEL_NONE
 
-        st.session_state["_result_base_date"] = result_base_date
+    # 检索结果相关
+    st.session_state["search_result"] = []
+    st.session_state["selected"] = []
+    st.session_state["_list_visible"] = False
+    st.session_state["_search_error"] = False
 
+    st.session_state["process_msg"] = ""
+    st.session_state["error_msg"] = ""
 
-
+    # 
+    st.session_state["_result_base_date"] = ""
