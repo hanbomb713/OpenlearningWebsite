@@ -1,76 +1,1392 @@
-本店所在国       AB
-日銀業種         0101000
-受信業種         0100
-主業種海外業種   A0101
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-最終CountryRisk  AB
-主管店           007
-海外業態         0000
-従業種海外業種   A0102
+"""
+xlsx_to_markdown.py
 
+把一个 .xlsx 文件转换成：
+- 每个 Sheet 一个独立的 .md 文件
+- 自动生成 _index.md
+- 支持合并单元格
+- 支持空白行处理
+- 支持公式
+- 支持隐藏 Sheet 跳过
+- 不修改原始 Excel
 
-UPDATE MAIN_H.SILVER_4.T456SMDD010
-SET
-    HONTEN_SHOZAIKOKU_CD      = 'AB',
-    SAISHU_COUNTRY_RISK_CD_1  = 'AB',
-    NICHIGIN_GYOSHU_CD        = '0101000',
-    SHUKAN_TEMBAN             = '007',
-    JUSHIN_GYOSHU_CD          = '0100',
-    KAIGAI_GYOTAI_CD          = '0000',
-    KAIGAI_SHUGYOSHU_CD       = 'A0101',
-    KAIGAI_JUGYOSHU_CD        = 'A0102'
-WHERE HOJIN_NO = '666002'
-  AND KIJUN_YMD = '20260902';
+不需要安装 pandas / openpyxl，
+只使用 Python 标准库。
+"""
 
+from __future__ import annotations
 
+import argparse
+import html
+import re
+import sys
+import zipfile
 
-本店所在国       AC
-日銀業種         0101010
-受信業種         0108
-主業種海外業種   A0102
-
-最終CountryRisk  AD
-主管店           023
-海外業態         0100
-従業種海外業種   A0103
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+from xml.etree import ElementTree as ET
 
 
-UPDATE MAIN_H.SILVER_4.T456SMDD010
-SET
-    HONTEN_SHOZAIKOKU_CD      = 'AC',
-    SAISHU_COUNTRY_RISK_CD_1  = 'AD',
-    NICHIGIN_GYOSHU_CD        = '0101010',
-    SHUKAN_TEMBAN             = '023',
-    JUSHIN_GYOSHU_CD          = '0108',
-    KAIGAI_GYOTAI_CD          = '0100',
-    KAIGAI_SHUGYOSHU_CD       = 'A0102',
-    KAIGAI_JUGYOSHU_CD        = 'A0103'
-WHERE HOJIN_NO = '666003'
-  AND KIJUN_YMD = '20260902';
+# ============================================================
+# Excel XML Namespace
+# ============================================================
+
+NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+NS_PKG_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+MAIN = f"{{{NS_MAIN}}}"
+REL = f"{{{NS_REL}}}"
+PKGREL = f"{{{NS_PKG_REL}}}"
 
 
+# ============================================================
+# Sheet 信息
+# ============================================================
 
-本店所在国       AC
-日銀業種         0105000
-受信業種         0109
-主業種海外業種   A0101
-
-最終CountryRisk  AC
-主管店           025
-海外業態         0100
-従業種海外業種   A0103
-
+@dataclass
+class SheetInfo:
+    name: str
+    path: str
+    state: str = "visible"
 
 
-UPDATE MAIN_H.SILVER_4.T456SMDD010
-SET
-    HONTEN_SHOZAIKOKU_CD      = 'AC',
-    SAISHU_COUNTRY_RISK_CD_1  = 'AC',
-    NICHIGIN_GYOSHU_CD        = '0105000',
-    SHUKAN_TEMBAN             = '025',
-    JUSHIN_GYOSHU_CD          = '0109',
-    KAIGAI_GYOTAI_CD          = '0100',
-    KAIGAI_SHUGYOSHU_CD       = 'A0101',
-    KAIGAI_JUGYOSHU_CD        = 'A0103'
-WHERE HOJIN_NO = '666004'
-  AND KIJUN_YMD = '20260902';
+# ============================================================
+# Excel 坐标处理
+# ============================================================
+
+def col_letters_to_num(letters: str) -> int:
+    """
+    Excel 列字母 -> 数字
+
+    A  -> 1
+    B  -> 2
+    Z  -> 26
+    AA -> 27
+    """
+
+    n = 0
+
+    for ch in letters.upper():
+        if "A" <= ch <= "Z":
+            n = n * 26 + (ord(ch) - ord("A") + 1)
+
+    return n
+
+
+def col_num_to_letters(n: int) -> str:
+    """
+    数字 -> Excel 列字母
+
+    1  -> A
+    26 -> Z
+    27 -> AA
+    """
+
+    result = ""
+
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        result = chr(ord("A") + rem) + result
+
+    return result
+
+
+def split_cell_ref(ref: str) -> Tuple[int, int]:
+    """
+    A1 -> (1, 1)
+    C12 -> (12, 3)
+    """
+
+    match = re.fullmatch(r"([A-Za-z]+)(\d+)", ref)
+
+    if not match:
+        raise ValueError(f"Invalid cell reference: {ref}")
+
+    row = int(match.group(2))
+    col = col_letters_to_num(match.group(1))
+
+    return row, col
+
+
+# ============================================================
+# 文件名安全处理
+# ============================================================
+
+def safe_filename(name: str) -> str:
+    """
+    Sheet 名转换成 Windows 可用文件名
+    """
+
+    name = re.sub(
+        r'[<>:"/\\|?*\x00-\x1F]',
+        "_",
+        name,
+    )
+
+    name = name.strip()
+
+    name = re.sub(
+        r"\s+",
+        "_",
+        name,
+    )
+
+    name = name.rstrip(". ")
+
+    return name or "sheet"
+
+
+def unique_filename(
+    base: str,
+    used: set[str],
+) -> str:
+
+    candidate = base
+    counter = 2
+
+    while candidate.lower() in used:
+
+        stem = Path(base).stem
+        suffix = Path(base).suffix
+
+        candidate = f"{stem}_{counter}{suffix}"
+
+        counter += 1
+
+    used.add(candidate.lower())
+
+    return candidate
+
+
+# ============================================================
+# XML 读取
+# ============================================================
+
+def read_xml(
+    zf: zipfile.ZipFile,
+    path: str,
+) -> ET.Element:
+
+    with zf.open(path) as f:
+        return ET.parse(f).getroot()
+
+
+def normalize_target(
+    base_dir: str,
+    target: str,
+) -> str:
+    """
+    处理：
+    ../worksheets/sheet1.xml
+    """
+
+    parts: List[str] = []
+
+    raw = f"{base_dir}/{target}".replace("\\", "/")
+
+    for part in raw.split("/"):
+
+        if part in ("", "."):
+            continue
+
+        if part == "..":
+
+            if parts:
+                parts.pop()
+
+        else:
+            parts.append(part)
+
+    return "/".join(parts)
+
+
+# ============================================================
+# Shared Strings
+# ============================================================
+
+def load_shared_strings(
+    zf: zipfile.ZipFile,
+) -> List[str]:
+
+    path = "xl/sharedStrings.xml"
+
+    if path not in zf.namelist():
+        return []
+
+    root = read_xml(
+        zf,
+        path,
+    )
+
+    result: List[str] = []
+
+    for si in root.findall(f"{MAIN}si"):
+
+        texts: List[str] = []
+
+        # 同时处理普通文本和 Rich Text
+        for t in si.iter(f"{MAIN}t"):
+            texts.append(
+                t.text or ""
+            )
+
+        result.append(
+            "".join(texts)
+        )
+
+    return result
+
+
+# ============================================================
+# 获取 Workbook 中所有 Sheet
+# ============================================================
+
+def workbook_sheets(
+    zf: zipfile.ZipFile,
+) -> List[SheetInfo]:
+
+    workbook = read_xml(
+        zf,
+        "xl/workbook.xml",
+    )
+
+    relationships = read_xml(
+        zf,
+        "xl/_rels/workbook.xml.rels",
+    )
+
+    relation_targets: Dict[str, str] = {}
+
+    for rel in relationships.findall(
+        f"{PKGREL}Relationship"
+    ):
+
+        rid = rel.attrib.get("Id")
+        target = rel.attrib.get("Target")
+
+        if rid and target:
+
+            relation_targets[rid] = normalize_target(
+                "xl",
+                target,
+            )
+
+    sheets: List[SheetInfo] = []
+
+    sheets_node = workbook.find(
+        f"{MAIN}sheets"
+    )
+
+    if sheets_node is None:
+        return sheets
+
+    for sheet in sheets_node.findall(
+        f"{MAIN}sheet"
+    ):
+
+        name = sheet.attrib.get(
+            "name",
+            "Sheet",
+        )
+
+        state = sheet.attrib.get(
+            "state",
+            "visible",
+        )
+
+        rid = sheet.attrib.get(
+            f"{REL}id"
+        )
+
+        if rid and rid in relation_targets:
+
+            sheets.append(
+                SheetInfo(
+                    name=name,
+                    path=relation_targets[rid],
+                    state=state,
+                )
+            )
+
+    return sheets
+
+
+# ============================================================
+# 单元格值读取
+# ============================================================
+
+def cell_text(
+    cell: ET.Element,
+    shared_strings: List[str],
+    formula_mode: str,
+) -> str:
+
+    cell_type = cell.attrib.get(
+        "t",
+        "",
+    )
+
+    formula = cell.find(
+        f"{MAIN}f"
+    )
+
+    value = cell.find(
+        f"{MAIN}v"
+    )
+
+    inline = cell.find(
+        f"{MAIN}is"
+    )
+
+    formula_text = ""
+
+    if formula is not None:
+        formula_text = formula.text or ""
+
+    cached = ""
+
+    # Shared String
+    if (
+        cell_type == "s"
+        and value is not None
+        and value.text is not None
+    ):
+
+        try:
+
+            idx = int(
+                value.text
+            )
+
+            if 0 <= idx < len(shared_strings):
+                cached = shared_strings[idx]
+            else:
+                cached = value.text
+
+        except ValueError:
+            cached = value.text
+
+    # Inline String
+    elif (
+        cell_type == "inlineStr"
+        and inline is not None
+    ):
+
+        cached = "".join(
+            (t.text or "")
+            for t in inline.iter(f"{MAIN}t")
+        )
+
+    # Boolean
+    elif (
+        cell_type == "b"
+        and value is not None
+    ):
+
+        cached = (
+            "TRUE"
+            if value.text == "1"
+            else "FALSE"
+        )
+
+    # String
+    elif (
+        cell_type == "str"
+        and value is not None
+    ):
+
+        cached = value.text or ""
+
+    # Error
+    elif (
+        cell_type == "e"
+        and value is not None
+    ):
+
+        cached = value.text or ""
+
+    # Number / 普通值
+    elif value is not None:
+
+        cached = value.text or ""
+
+    # --------------------------------------------------------
+    # 公式处理
+    # --------------------------------------------------------
+
+    if formula is not None:
+
+        formula_display = f"={formula_text}"
+
+        if formula_mode == "formula":
+            return formula_display
+
+        if formula_mode == "value":
+            return cached
+
+        # both
+        if cached and cached != formula_display:
+
+            return (
+                f"{formula_display}"
+                f" 〔cached: {cached}〕"
+            )
+
+        return formula_display
+
+    return cached
+
+
+# ============================================================
+# 解析一个 Sheet
+# ============================================================
+
+def parse_sheet(
+    zf: zipfile.ZipFile,
+    sheet_path: str,
+    shared_strings: List[str],
+    formula_mode: str,
+    merge_mode: str,
+) -> Dict[Tuple[int, int], str]:
+
+    root = read_xml(
+        zf,
+        sheet_path,
+    )
+
+    cells: Dict[
+        Tuple[int, int],
+        str,
+    ] = {}
+
+    sheet_data = root.find(
+        f"{MAIN}sheetData"
+    )
+
+    # --------------------------------------------------------
+    # 普通 Cell
+    # --------------------------------------------------------
+
+    if sheet_data is not None:
+
+        for row in sheet_data.findall(
+            f"{MAIN}row"
+        ):
+
+            for cell in row.findall(
+                f"{MAIN}c"
+            ):
+
+                ref = cell.attrib.get(
+                    "r"
+                )
+
+                if not ref:
+                    continue
+
+                row_no, col_no = split_cell_ref(
+                    ref
+                )
+
+                cells[
+                    (row_no, col_no)
+                ] = cell_text(
+                    cell,
+                    shared_strings,
+                    formula_mode,
+                )
+
+    # --------------------------------------------------------
+    # 合并单元格
+    # --------------------------------------------------------
+
+    merge_cells = root.find(
+        f"{MAIN}mergeCells"
+    )
+
+    if merge_cells is not None:
+
+        for merge_cell in merge_cells.findall(
+            f"{MAIN}mergeCell"
+        ):
+
+            ref = merge_cell.attrib.get(
+                "ref",
+                "",
+            )
+
+            if ":" not in ref:
+                continue
+
+            start, end = ref.split(
+                ":",
+                1,
+            )
+
+            r1, c1 = split_cell_ref(
+                start
+            )
+
+            r2, c2 = split_cell_ref(
+                end
+            )
+
+            top_left = cells.get(
+                (r1, c1),
+                "",
+            )
+
+            # ------------------------------------------------
+            # fill
+            # 合并区域全部填充左上角内容
+            # 最适合 AI 阅读
+            # ------------------------------------------------
+
+            if merge_mode == "fill":
+
+                for r in range(
+                    r1,
+                    r2 + 1,
+                ):
+
+                    for c in range(
+                        c1,
+                        c2 + 1,
+                    ):
+
+                        cells[
+                            (r, c)
+                        ] = top_left
+
+            # ------------------------------------------------
+            # marker
+            # 子单元格标记 merged
+            # ------------------------------------------------
+
+            elif merge_mode == "marker":
+
+                for r in range(
+                    r1,
+                    r2 + 1,
+                ):
+
+                    for c in range(
+                        c1,
+                        c2 + 1,
+                    ):
+
+                        if (
+                            r,
+                            c,
+                        ) != (
+                            r1,
+                            c1,
+                        ):
+
+                            cells[
+                                (r, c)
+                            ] = (
+                                f"↳ merged with {start}"
+                            )
+
+            # ------------------------------------------------
+            # top-left
+            # 什么都不做
+            # 只保留左上角
+            # ------------------------------------------------
+
+    return cells
+
+
+# ============================================================
+# 找到实际有效区域
+# ============================================================
+
+def nonempty_bounds(
+    cells: Dict[
+        Tuple[int, int],
+        str,
+    ]
+) -> Optional[
+    Tuple[
+        int,
+        int,
+        int,
+        int,
+    ]
+]:
+
+    nonempty = [
+        (row, col)
+        for (
+            row,
+            col,
+        ), value
+        in cells.items()
+        if str(value).strip() != ""
+    ]
+
+    if not nonempty:
+        return None
+
+    rows = [
+        row
+        for row, _ in nonempty
+    ]
+
+    cols = [
+        col
+        for _, col in nonempty
+    ]
+
+    return (
+        min(rows),
+        max(rows),
+        min(cols),
+        max(cols),
+    )
+
+
+# ============================================================
+# Markdown Cell 清洗
+# ============================================================
+
+def normalize_markdown_cell(
+    value: object,
+) -> str:
+
+    if value is None:
+        text = ""
+    else:
+        text = str(value)
+
+    # 换行统一
+    text = text.replace(
+        "\r\n",
+        "\n",
+    )
+
+    text = text.replace(
+        "\r",
+        "\n",
+    )
+
+    # HTML Escape
+    text = html.escape(
+        text,
+        quote=False,
+    )
+
+    # Markdown table |
+    text = text.replace(
+        "|",
+        r"\|",
+    )
+
+    # 单元格换行
+    text = text.replace(
+        "\n",
+        "<br>",
+    )
+
+    return text.strip()
+
+
+# ============================================================
+# 空白行处理
+# ============================================================
+
+def is_blank_row(
+    row: List[str],
+) -> bool:
+
+    return all(
+        str(value).strip() == ""
+        for value in row
+    )
+
+
+def process_blank_rows(
+    rows: List[List[str]],
+    mode: str,
+) -> List[List[str]]:
+
+    # 保留全部
+    if mode == "keep":
+        return rows
+
+    # 删除全部空行
+    if mode == "remove":
+
+        return [
+            row
+            for row in rows
+            if not is_blank_row(row)
+        ]
+
+    # collapse
+    # 连续空行最多保留一行
+
+    result: List[List[str]] = []
+
+    previous_blank = False
+
+    for row in rows:
+
+        blank = is_blank_row(
+            row
+        )
+
+        if (
+            blank
+            and previous_blank
+        ):
+            continue
+
+        result.append(
+            row
+        )
+
+        previous_blank = blank
+
+    return result
+
+
+# ============================================================
+# Sheet -> Markdown
+# ============================================================
+
+def sheet_to_markdown(
+    workbook_name: str,
+    sheet_name: str,
+    cells: Dict[
+        Tuple[int, int],
+        str,
+    ],
+    blank_rows: str,
+    include_coordinates: bool,
+) -> str:
+
+    bounds = nonempty_bounds(
+        cells
+    )
+
+    lines: List[str] = [
+
+        f"# {sheet_name}",
+
+        "",
+
+        f"> Source: `{workbook_name}`  ",
+
+        f"> Worksheet: `{sheet_name}`",
+
+        "",
+    ]
+
+    # --------------------------------------------------------
+    # 空 Sheet
+    # --------------------------------------------------------
+
+    if bounds is None:
+
+        lines.append(
+            "_This worksheet contains no non-empty cells._"
+        )
+
+        lines.append("")
+
+        return "\n".join(
+            lines
+        )
+
+    min_row, max_row, min_col, max_col = bounds
+
+    lines.append(
+        "> Used range: "
+        f"`{col_num_to_letters(min_col)}{min_row}:"
+        f"{col_num_to_letters(max_col)}{max_row}`"
+    )
+
+    lines.append("")
+
+    # --------------------------------------------------------
+    # 构造二维数据
+    # --------------------------------------------------------
+
+    rows: List[List[str]] = []
+
+    for row_no in range(
+        min_row,
+        max_row + 1,
+    ):
+
+        row_values: List[str] = []
+
+        if include_coordinates:
+
+            row_values.append(
+                str(row_no)
+            )
+
+        for col_no in range(
+            min_col,
+            max_col + 1,
+        ):
+
+            value = cells.get(
+                (
+                    row_no,
+                    col_no,
+                ),
+                "",
+            )
+
+            row_values.append(
+                normalize_markdown_cell(
+                    value
+                )
+            )
+
+        rows.append(
+            row_values
+        )
+
+    # --------------------------------------------------------
+    # 空行处理
+    # --------------------------------------------------------
+
+    rows = process_blank_rows(
+        rows,
+        blank_rows,
+    )
+
+    # --------------------------------------------------------
+    # Markdown Header
+    # --------------------------------------------------------
+
+    headers: List[str] = []
+
+    if include_coordinates:
+        headers.append(
+            "Row"
+        )
+
+    headers.extend(
+        col_num_to_letters(col_no)
+        for col_no in range(
+            min_col,
+            max_col + 1,
+        )
+    )
+
+    lines.append(
+        "| "
+        + " | ".join(headers)
+        + " |"
+    )
+
+    lines.append(
+        "| "
+        + " | ".join(
+            ["---"] * len(headers)
+        )
+        + " |"
+    )
+
+    # --------------------------------------------------------
+    # Markdown Data
+    # --------------------------------------------------------
+
+    for row in rows:
+
+        lines.append(
+            "| "
+            + " | ".join(row)
+            + " |"
+        )
+
+    lines.append("")
+
+    return "\n".join(
+        lines
+    )
+
+
+# ============================================================
+# 生成 _index.md
+# ============================================================
+
+def make_index(
+    workbook_name: str,
+    exported: List[
+        Tuple[str, str]
+    ],
+) -> str:
+
+    lines = [
+
+        f"# {Path(workbook_name).stem} — Markdown Index",
+
+        "",
+
+        f"> Generated from `{workbook_name}`.",
+
+        (
+            "> Each worksheet is exported "
+            "as an independent Markdown file "
+            "for AI/context use."
+        ),
+
+        "",
+
+        "## Worksheets",
+
+        "",
+    ]
+
+    for sheet_name, filename in exported:
+
+        display = sheet_name.replace(
+            "[",
+            r"\[",
+        ).replace(
+            "]",
+            r"\]",
+        )
+
+        lines.append(
+            f"- [{display}]({filename})"
+        )
+
+    lines.append("")
+
+    return "\n".join(
+        lines
+    )
+
+
+# ============================================================
+# 转换主逻辑
+# ============================================================
+
+def convert_xlsx(
+    input_path: Path,
+    output_dir: Path,
+    merge_mode: str,
+    blank_rows: str,
+    formula_mode: str,
+    skip_hidden: bool,
+    only: Optional[set[str]],
+    include_coordinates: bool,
+) -> List[Tuple[str, str]]:
+
+    # --------------------------------------------------------
+    # 文件检查
+    # --------------------------------------------------------
+
+    if not input_path.exists():
+
+        raise FileNotFoundError(
+            f"Input file not found: {input_path}"
+        )
+
+    if input_path.suffix.lower() != ".xlsx":
+
+        raise ValueError(
+            "This tool currently supports .xlsx files only."
+        )
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    exported: List[
+        Tuple[str, str]
+    ] = []
+
+    used_filenames: set[str] = set()
+
+    # --------------------------------------------------------
+    # 打开 XLSX
+    # --------------------------------------------------------
+
+    with zipfile.ZipFile(
+        input_path,
+        "r",
+    ) as zf:
+
+        shared_strings = load_shared_strings(
+            zf
+        )
+
+        sheets = workbook_sheets(
+            zf
+        )
+
+        if not sheets:
+
+            raise ValueError(
+                "No worksheets found in workbook."
+            )
+
+        # ----------------------------------------------------
+        # Sheet Loop
+        # ----------------------------------------------------
+
+        for sheet in sheets:
+
+            # 跳过隐藏 Sheet
+            if (
+                skip_hidden
+                and sheet.state != "visible"
+            ):
+                continue
+
+            # 只导出指定 Sheet
+            if (
+                only is not None
+                and sheet.name not in only
+            ):
+                continue
+
+            cells = parse_sheet(
+                zf=zf,
+                sheet_path=sheet.path,
+                shared_strings=shared_strings,
+                formula_mode=formula_mode,
+                merge_mode=merge_mode,
+            )
+
+            markdown = sheet_to_markdown(
+                workbook_name=input_path.name,
+                sheet_name=sheet.name,
+                cells=cells,
+                blank_rows=blank_rows,
+                include_coordinates=include_coordinates,
+            )
+
+            filename = unique_filename(
+                f"{safe_filename(sheet.name)}.md",
+                used_filenames,
+            )
+
+            output_file = (
+                output_dir
+                / filename
+            )
+
+            output_file.write_text(
+                markdown,
+                encoding="utf-8",
+            )
+
+            exported.append(
+                (
+                    sheet.name,
+                    filename,
+                )
+            )
+
+    # --------------------------------------------------------
+    # 没有导出任何 Sheet
+    # --------------------------------------------------------
+
+    if not exported:
+
+        raise ValueError(
+            "No worksheets matched the export conditions."
+        )
+
+    # --------------------------------------------------------
+    # _index.md
+    # --------------------------------------------------------
+
+    index_text = make_index(
+        input_path.name,
+        exported,
+    )
+
+    index_file = (
+        output_dir
+        / "_index.md"
+    )
+
+    index_file.write_text(
+        index_text,
+        encoding="utf-8",
+    )
+
+    return exported
+
+
+# ============================================================
+# 命令行参数
+# ============================================================
+
+def build_parser() -> argparse.ArgumentParser:
+
+    parser = argparse.ArgumentParser(
+
+        description=(
+            "Convert each XLSX worksheet "
+            "into a separate Markdown file."
+        )
+    )
+
+    parser.add_argument(
+
+        "xlsx",
+
+        help="Input .xlsx file",
+    )
+
+    parser.add_argument(
+
+        "-o",
+        "--output",
+
+        help=(
+            "Output directory. "
+            "Default: <xlsx_name>_md "
+            "next to the source file."
+        ),
+    )
+
+    parser.add_argument(
+
+        "--merge-mode",
+
+        choices=[
+            "fill",
+            "top-left",
+            "marker",
+        ],
+
+        default="fill",
+
+        help=(
+            "Merged-cell handling. "
+            "'fill' repeats the top-left value "
+            "across the merged area; "
+            "'top-left' keeps only top-left; "
+            "'marker' marks child cells. "
+            "Default: fill."
+        ),
+    )
+
+    parser.add_argument(
+
+        "--blank-rows",
+
+        choices=[
+            "keep",
+            "collapse",
+            "remove",
+        ],
+
+        default="collapse",
+
+        help=(
+            "How to handle blank rows. "
+            "Default: collapse."
+        ),
+    )
+
+    parser.add_argument(
+
+        "--formula-mode",
+
+        choices=[
+            "formula",
+            "value",
+            "both",
+        ],
+
+        default="both",
+
+        help=(
+            "Formula cells: "
+            "output formula, cached value, or both. "
+            "Default: both."
+        ),
+    )
+
+    parser.add_argument(
+
+        "--skip-hidden",
+
+        action="store_true",
+
+        help=(
+            "Do not export hidden "
+            "or veryHidden worksheets."
+        ),
+    )
+
+    parser.add_argument(
+
+        "--only",
+
+        help=(
+            'Comma-separated worksheet names. '
+            'Example: '
+            '--only "画面仕様,イベント仕様,SQL仕様"'
+        ),
+    )
+
+    parser.add_argument(
+
+        "--no-row-numbers",
+
+        action="store_true",
+
+        help=(
+            "Do not add Excel row numbers "
+            "to Markdown tables."
+        ),
+    )
+
+    return parser
+
+
+# ============================================================
+# main
+# ============================================================
+
+def main() -> int:
+
+    parser = build_parser()
+
+    args = parser.parse_args()
+
+    input_path = (
+        Path(args.xlsx)
+        .expanduser()
+        .resolve()
+    )
+
+    # --------------------------------------------------------
+    # 默认输出目录
+    #
+    # ABC.xlsx
+    #
+    # ->
+    #
+    # ABC_md/
+    # --------------------------------------------------------
+
+    if args.output:
+
+        output_dir = (
+            Path(args.output)
+            .expanduser()
+            .resolve()
+        )
+
+    else:
+
+        output_dir = input_path.with_name(
+            f"{input_path.stem}_md"
+        )
+
+    # --------------------------------------------------------
+    # 指定 Sheet
+    # --------------------------------------------------------
+
+    only = None
+
+    if args.only:
+
+        only = {
+            name.strip()
+            for name
+            in args.only.split(",")
+            if name.strip()
+        }
+
+    # --------------------------------------------------------
+    # 执行
+    # --------------------------------------------------------
+
+    try:
+
+        exported = convert_xlsx(
+
+            input_path=input_path,
+
+            output_dir=output_dir,
+
+            merge_mode=args.merge_mode,
+
+            blank_rows=args.blank_rows,
+
+            formula_mode=args.formula_mode,
+
+            skip_hidden=args.skip_hidden,
+
+            only=only,
+
+            include_coordinates=(
+                not args.no_row_numbers
+            ),
+        )
+
+    except (
+        FileNotFoundError,
+        ValueError,
+        zipfile.BadZipFile,
+        KeyError,
+    ) as exc:
+
+        print(
+            f"[ERROR] {exc}",
+            file=sys.stderr,
+        )
+
+        return 1
+
+    # --------------------------------------------------------
+    # 成功结果
+    # --------------------------------------------------------
+
+    print(
+        f"[OK] Source : {input_path}"
+    )
+
+    print(
+        f"[OK] Output : {output_dir}"
+    )
+
+    print(
+        f"[OK] Sheets : {len(exported)}"
+    )
+
+    for (
+        sheet_name,
+        filename,
+    ) in exported:
+
+        print(
+            f"  - {sheet_name}"
+            f" -> "
+            f"{filename}"
+        )
+
+    print(
+        "  - INDEX -> _index.md"
+    )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(
+        main()
+    )
