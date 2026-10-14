@@ -1,9 +1,61 @@
-st.write(
-    "PARENT DEBUG:",
-    "mode =",
-    repr(st.session_state.get("kensaku_hojin_taisyou_mode")),
-    "radio =",
-    repr(st.session_state.get("_display_target_radio")),
-    "widget =",
-    repr(st.session_state.get("_display_target_radio_widget")),
+with row1_col2:
+    options = list(DISPLAY_TARGET_OPTIONS.keys())
+
+    parent_mode = str(
+        st.session_state.get("kensaku_hojin_taisyou_mode", "0")
+    )
+
+    mode_map = {
+        "0": DISPLAY_ALL,
+        "1": DISPLAY_NAYOSE,
+        "2": DISPLAY_TOP,
+        "3": DISPLAY_PARENT,
+    }
+
+    initial_target = mode_map.get(parent_mode, DISPLAY_ALL)
+
+    initial_label = next(
+        (
+            label
+            for label, value in DISPLAY_TARGET_OPTIONS.items()
+            if value == initial_target
+        ),
+        options[0],
+    )
+
+    # Radio 的 Widget Key 固定
+    radio_key = "_condition1_display_radio"
+
+    # 仅在 Popup 新打开时初始化
+    open_seq = st.session_state.get("_popup_open_seq", 0)
+
+    if st.session_state.get("_radio_initialized_seq") != open_seq:
+        st.session_state[radio_key] = initial_label
+        st.session_state["_radio_initialized_seq"] = open_seq
+
+    selected_label = st.radio(
+        "",
+        options=options,
+        horizontal=True,
+        key=radio_key,
+        label_visibility="collapsed",
+    )
+
+    st.session_state["_display_target_radio"] = selected_label
+    st.session_state["display_target"] = (
+        DISPLAY_TARGET_OPTIONS[selected_label]
+    )
+
+
+
+
+# 下次打开时重新初始化
+st.session_state["_popup_open_seq"] = (
+    st.session_state.get("_popup_open_seq", 0) + 1
 )
+
+st.session_state.pop("_condition1_display_radio", None)
+st.session_state.pop("_radio_initialized_seq", None)
+
+st.session_state.pop("_display_target_radio", None)
+st.session_state.pop("display_target", None)
