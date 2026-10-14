@@ -23,19 +23,14 @@ with row1_col2:
         options[0],
     )
 
-    # Radio 的 Widget Key 固定
-    radio_key = "_condition1_display_radio"
-
-    # 仅在 Popup 新打开时初始化
-    open_seq = st.session_state.get("_popup_open_seq", 0)
-
-    if st.session_state.get("_radio_initialized_seq") != open_seq:
-        st.session_state[radio_key] = initial_label
-        st.session_state["_radio_initialized_seq"] = open_seq
+    # Clear / Cancel 后使用新的 widget key
+    radio_seq = st.session_state.get("_popup_radio_seq", 0)
+    radio_key = f"_condition1_display_radio_{radio_seq}"
 
     selected_label = st.radio(
         "",
         options=options,
+        index=options.index(initial_label),
         horizontal=True,
         key=radio_key,
         label_visibility="collapsed",
@@ -49,13 +44,21 @@ with row1_col2:
 
 
 
-# 下次打开时重新初始化
-st.session_state["_popup_open_seq"] = (
-    st.session_state.get("_popup_open_seq", 0) + 1
+# Radio widget 更新版本，恢复父画面初始选项
+st.session_state["_popup_radio_seq"] = (
+    st.session_state.get("_popup_radio_seq", 0) + 1
 )
 
-st.session_state.pop("_condition1_display_radio", None)
-st.session_state.pop("_radio_initialized_seq", None)
+st.session_state["_display_target_radio"] = initial_display_label
+st.session_state["display_target"] = initial_display_target
 
-st.session_state.pop("_display_target_radio", None)
-st.session_state.pop("display_target", None)
+
+
+
+# 取消后，下次打开使用新的 Radio widget
+st.session_state["_popup_radio_seq"] = (
+    st.session_state.get("_popup_radio_seq", 0) + 1
+)
+
+
+
