@@ -1,0 +1,27 @@
+radio_key = (
+    f"_display_target_radio_"
+    f"{st.session_state.get('_popup_open_seq', 0)}"
+)
+
+options = list(DISPLAY_TARGET_OPTIONS.keys())
+
+initial_label = st.session_state.get(
+    "_display_target_radio",
+    options[0],
+)
+
+if initial_label not in options:
+    initial_label = options[0]
+
+if radio_key not in st.session_state:
+    st.session_state[radio_key] = initial_label
+
+selected_label = st.radio(
+    "",
+    options=options,
+    horizontal=True,
+    key=radio_key,
+)
+
+st.session_state["_display_target_radio"] = selected_label
+st.session_state["display_target"] = DISPLAY_TARGET_OPTIONS[selected_label]
