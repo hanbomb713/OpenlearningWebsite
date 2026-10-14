@@ -1,55 +1,9 @@
-with row1_col2:
-
-    # Radio 使用固定 Widget Key
-    radio_key = "_display_target_radio_widget"
-
-    options = list(DISPLAY_TARGET_OPTIONS.keys())
-
-    # Widget 尚未初始化时，使用父画面传入的值
-    if radio_key not in st.session_state:
-
-        parent_mode = str(
-            st.session_state.get(
-                "kensaku_hojin_taisyou_mode",
-                "0"
-            )
-        )
-
-        mode_map = {
-            "0": DISPLAY_ALL,
-            "1": DISPLAY_NAYOSE,
-            "2": DISPLAY_TOP,
-            "3": DISPLAY_PARENT,
-        }
-
-        initial_target = mode_map.get(
-            parent_mode,
-            DISPLAY_ALL
-        )
-
-        initial_label = next(
-            (
-                label
-                for label, value in DISPLAY_TARGET_OPTIONS.items()
-                if value == initial_target
-            ),
-            options[0]
-        )
-
-        st.session_state[radio_key] = initial_label
-
-    # 创建 Radio
-    selected_label = st.radio(
-        "",
-        options=options,
-        horizontal=True,
-        key=radio_key,
-        label_visibility="collapsed",
-    )
-
-    # 同步业务状态
-    st.session_state["_display_target_radio"] = selected_label
-
-    st.session_state["display_target"] = (
-        DISPLAY_TARGET_OPTIONS[selected_label]
-    )
+st.write(
+    "PARENT DEBUG:",
+    "mode =",
+    repr(st.session_state.get("kensaku_hojin_taisyou_mode")),
+    "radio =",
+    repr(st.session_state.get("_display_target_radio")),
+    "widget =",
+    repr(st.session_state.get("_display_target_radio_widget")),
+)
