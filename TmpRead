@@ -1,27 +1,50 @@
-radio_key = (
-    f"_display_target_radio_"
-    f"{st.session_state.get('_popup_open_seq', 0)}"
-)
+with row1_col2:
+    radio_key = (
+        f"_display_target_radio_"
+        f"{st.session_state.get('_popup_open_seq', 0)}"
+    )
 
-options = list(DISPLAY_TARGET_OPTIONS.keys())
+    options = list(DISPLAY_TARGET_OPTIONS.keys())
 
-initial_label = st.session_state.get(
-    "_display_target_radio",
-    options[0],
-)
+    # 只有新的Widget首次创建时才读取父画面的值
+    if radio_key not in st.session_state:
 
-if initial_label not in options:
-    initial_label = options[0]
+        parent_mode = str(
+            st.session_state.get(
+                "kensaku_hojin_taisyou_mode", "0"
+            )
+        )
 
-if radio_key not in st.session_state:
-    st.session_state[radio_key] = initial_label
+        mode_map = {
+            "0": DISPLAY_ALL,
+            "1": DISPLAY_NAYOSE,
+            "2": DISPLAY_TOP,
+            "3": DISPLAY_PARENT,
+        }
 
-selected_label = st.radio(
-    "",
-    options=options,
-    horizontal=True,
-    key=radio_key,
-)
+        initial_target = mode_map.get(
+            parent_mode, DISPLAY_ALL
+        )
 
-st.session_state["_display_target_radio"] = selected_label
-st.session_state["display_target"] = DISPLAY_TARGET_OPTIONS[selected_label]
+        initial_label = next(
+            (
+                label
+                for label, value in DISPLAY_TARGET_OPTIONS.items()
+                if value == initial_target
+            ),
+            options[0]
+        )
+
+        st.session_state[radio_key] = initial_label
+
+    selected_label = st.radio(
+        "",
+        options=options,
+        horizontal=True,
+        key=radio_key,
+    )
+
+    st.session_state["_display_target_radio"] = selected_label
+    st.session_state["display_target"] = (
+        DISPLAY_TARGET_OPTIONS[selected_label]
+    )
