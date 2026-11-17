@@ -1,41 +1,141 @@
 
--- ITb_40 変更候補一覧
--- 日次・月次の法人番号登録済みデータを取得
+-- ITb_40 既存法人番号データの表示条件確認
+
+WITH BASE AS (
+    SELECT
+        '日次' AS DATA_SOURCE,
+        KIJUN_YMD AS KIJUN,
+        MEIGARA_CD,
+        KANRI_TEMBAN,
+        HOJIN_NO,
+        TOSHI_KBN,
+        MGN,
+        BOKA_ZD_YEN
+    FROM MAIN_K.SILVER.T456SMDA030
+    WHERE KIJUN_YMD <= '20260606'
+      AND RONRI_SAKUJO_FLG = '0'
+      AND HOJINDM_KAMOKU_CD = 'BOND'
+      AND SHUBETSU IN (
+          '国内債券', '国内外国債券'
+      )
+      AND NULLIF(TRIM(HOJIN_NO), '') IS NOT NULL
+      AND TRIM(HOJIN_NO) <> '000000'
+
+    UNION ALL
+
+    SELECT
+        '月次' AS DATA_SOURCE,
+        KIJUN_YM AS KIJUN,
+        MEIGARA_CD,
+        KANRI_TEMBAN,
+        HOJIN_NO,
+        TOSHI_KBN,
+        MGN,
+        BOKA_ZD_YEN
+    FROM MAIN_K.SILVER.T456SMMA030
+    WHERE KIJUN_YM = '202605'
+      AND RONRI_SAKUJO_FLG = '0'
+      AND HOJINDM_KAMOKU_CD = 'BOND'
+      AND SHUBETSU IN (
+          '国内債券', '国内外国債券'
+      )
+      AND NULLIF(TRIM(HOJIN_NO), '') IS NOT NULL
+      AND TRIM(HOJIN_NO) <> '000000'
+)
 
 SELECT
-    '日次' AS DATA_SOURCE,
-    KIJUN_YMD AS KIJUN,
+    DATA_SOURCE,
+    KIJUN,
     MEIGARA_CD,
     KANRI_TEMBAN,
     HOJIN_NO,
     TOSHI_KBN,
     MGN,
-    BOKA_ZD_YEN
-FROM MAIN_K.SILVER.T456SMDA030
-WHERE KIJUN_YMD <= '20260606'
-  AND RONRI_SAKUJO_FLG = '0'
-  AND HOJINDM_KAMOKU_CD = 'BOND'
-  AND SHUBETSU IN ('国内債券', '国内外国債券')
-  AND NULLIF(TRIM(HOJIN_NO), '') IS NOT NULL
-  AND TRIM(HOJIN_NO) <> '000000'
+    BOKA_ZD_YEN,
 
-UNION ALL
+    CASE
+        WHEN TOSHI_KBN IS NULL
+          OR TRIM(TOSHI_KBN) = ''
+          OR (TOSHI_KBN = '01' AND MGN = 0)
+          OR BOKA_ZD_YEN = 0
+        THEN '表示対象'
+        ELSE '表示対象外'
+    END AS SCREEN_RESULT
+
+FROM BASE
+ORDER BY DATA_SOURCE, KIJUN DESC, MEIGARA_CD;
+
+
+
+
+
+
+
+
+
+
+-- ITb_40 既存法人番号データの表示条件確認
+
+WITH BASE AS (
+    SELECT
+        '日次' AS DATA_SOURCE,
+        KIJUN_YMD AS KIJUN,
+        MEIGARA_CD,
+        KANRI_TEMBAN,
+        HOJIN_NO,
+        TOSHI_KBN,
+        MGN,
+        BOKA_ZD_YEN
+    FROM MAIN_K.SILVER.T456SMDA030
+    WHERE KIJUN_YMD <= '20260606'
+      AND RONRI_SAKUJO_FLG = '0'
+      AND HOJINDM_KAMOKU_CD = 'BOND'
+      AND SHUBETSU IN (
+          '国内債券', '国内外国債券'
+      )
+      AND NULLIF(TRIM(HOJIN_NO), '') IS NOT NULL
+      AND TRIM(HOJIN_NO) <> '000000'
+
+    UNION ALL
+
+    SELECT
+        '月次' AS DATA_SOURCE,
+        KIJUN_YM AS KIJUN,
+        MEIGARA_CD,
+        KANRI_TEMBAN,
+        HOJIN_NO,
+        TOSHI_KBN,
+        MGN,
+        BOKA_ZD_YEN
+    FROM MAIN_K.SILVER.T456SMMA030
+    WHERE KIJUN_YM = '202605'
+      AND RONRI_SAKUJO_FLG = '0'
+      AND HOJINDM_KAMOKU_CD = 'BOND'
+      AND SHUBETSU IN (
+          '国内債券', '国内外国債券'
+      )
+      AND NULLIF(TRIM(HOJIN_NO), '') IS NOT NULL
+      AND TRIM(HOJIN_NO) <> '000000'
+)
 
 SELECT
-    '月次' AS DATA_SOURCE,
-    KIJUN_YM AS KIJUN,
+    DATA_SOURCE,
+    KIJUN,
     MEIGARA_CD,
     KANRI_TEMBAN,
     HOJIN_NO,
     TOSHI_KBN,
     MGN,
-    BOKA_ZD_YEN
-FROM MAIN_K.SILVER.T456SMMA030
-WHERE KIJUN_YM = '202605'
-  AND RONRI_SAKUJO_FLG = '0'
-  AND HOJINDM_KAMOKU_CD = 'BOND'
-  AND SHUBETSU IN ('国内債券', '国内外国債券')
-  AND NULLIF(TRIM(HOJIN_NO), '') IS NOT NULL
-  AND TRIM(HOJIN_NO) <> '000000'
+    BOKA_ZD_YEN,
 
+    CASE
+        WHEN TOSHI_KBN IS NULL
+          OR TRIM(TOSHI_KBN) = ''
+          OR (TOSHI_KBN = '01' AND MGN = 0)
+          OR BOKA_ZD_YEN = 0
+        THEN '表示対象'
+        ELSE '表示対象外'
+    END AS SCREEN_RESULT
+
+FROM BASE
 ORDER BY DATA_SOURCE, KIJUN DESC, MEIGARA_CD;
