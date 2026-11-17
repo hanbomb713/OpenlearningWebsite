@@ -1,205 +1,41 @@
 
--- ITb_40 債券 日次データ分析
--- 初回登録・変更候補の件数、割合、サンプルを取得
+-- ITb_40 変更候補一覧
+-- 日次・月次の法人番号登録済みデータを取得
 
-WITH BASE AS (
-    SELECT
-        KIJUN_YMD,
-        MEIGARA_CD,
-        KANRI_TENBAN,
-        HOJIN_NO,
-        TOSHI_KBN,
-        MGN,
-        BOKA_ZD_YEN,
-
-        CASE
-            WHEN HOJIN_NO IS NULL
-              OR TRIM(TO_VARCHAR(HOJIN_NO))
-                 IN ('', '000000')
-            THEN '初回登録'
-            ELSE '変更'
-        END AS TEST_KBN,
-
-        -- 初回登録画面の抽出条件
-        CASE
-            WHEN HOJIN_NO IS NULL
-              OR TRIM(TO_VARCHAR(HOJIN_NO))
-                 IN ('', '000000')
-              OR TOSHI_KBN IS NULL
-              OR TRIM(TO_VARCHAR(TOSHI_KBN)) = ''
-              OR (TOSHI_KBN = '01' AND MGN = 0)
-              OR BOKA_ZD_YEN = 0
-            THEN 1
-            ELSE 0
-        END AS SCREEN_TARGET
-
-    FROM MAIN_K.SILVER.T456SMDA030
-    WHERE KIJUN_YMD <= '20260606'
-      AND RONRI_SAKUJO_FLG = '0'
-      AND HOJINDM_KAMOKU_CD = 'BOND'
-      AND SHUBETSU IN ('国内債券', '国内外国債券')
-),
-STATS AS (
-    SELECT
-        TEST_KBN,
-        COUNT(*) AS DATA_COUNT,
-        COALESCE(
-            COUNT_IF(SCREEN_TARGET = 1), 0
-        ) AS SCREEN_COUNT
-    FROM BASE
-    GROUP BY TEST_KBN
-),
-CANDIDATES AS (
-    SELECT
-        *,
-        ROW_NUMBER() OVER (
-            PARTITION BY TEST_KBN
-            ORDER BY
-                CASE WHEN KANRI_TENBAN IS NULL
-                     THEN 1 ELSE 0 END,
-                KIJUN_YMD DESC,
-                MEIGARA_CD
-        ) AS RN
-    FROM BASE
-    WHERE SCREEN_TARGET = 1
-)
 SELECT
     '日次' AS DATA_SOURCE,
-    S.TEST_KBN,
-    S.DATA_COUNT,
-    ROUND(
-        S.DATA_COUNT * 100.0 /
-        NULLIF(SUM(S.DATA_COUNT) OVER (), 0),
-        2
-    ) AS PERCENT,
-    S.SCREEN_COUNT,
-    C.KIJUN_YMD,
-    C.MEIGARA_CD,
-    C.KANRI_TENBAN,
-    C.HOJIN_NO,
-    C.TOSHI_KBN,
-    C.MGN,
-    C.BOKA_ZD_YEN
-FROM STATS S
-LEFT JOIN CANDIDATES C
-    ON S.TEST_KBN = C.TEST_KBN
-   AND C.RN <= 5
-ORDER BY S.TEST_KBN, C.RN;
+    KIJUN_YMD AS KIJUN,
+    MEIGARA_CD,
+    KANRI_TEMBAN,
+    HOJIN_NO,
+    TOSHI_KBN,
+    MGN,
+    BOKA_ZD_YEN
+FROM MAIN_K.SILVER.T456SMDA030
+WHERE KIJUN_YMD <= '20260606'
+  AND RONRI_SAKUJO_FLG = '0'
+  AND HOJINDM_KAMOKU_CD = 'BOND'
+  AND SHUBETSU IN ('国内債券', '国内外国債券')
+  AND NULLIF(TRIM(HOJIN_NO), '') IS NOT NULL
+  AND TRIM(HOJIN_NO) <> '000000'
 
+UNION ALL
 
-
-
-
--- ITb_40 債券 月次データ分析
--- 初回登録・変更候補の件数、割合、サンプルを取得
-
-WITH BASE AS (
-    SELECT
-        KIJUN_YM,
-        MEIGARA_CD,
-        KANRI_TENBAN,
-        HOJIN_NO,
-        TOSHI_KBN,
-        MGN,
-        BOKA_ZD_YEN,
-
-        CASE
-            WHEN HOJIN_NO IS NULL
-              OR TRIM(TO_VARCHAR(HOJIN_NO))
-                 IN ('', '000000')
-            THEN '初回登録'
-            ELSE '変更'
-        END AS TEST_KBN,
-
-        CASE
-            WHEN HOJIN_NO IS NULL
-              OR TRIM(TO_VARCHAR(HOJIN_NO))
-                 IN ('', '000000')
-              OR TOSHI_KBN IS NULL
-              OR TRIM(TO_VARCHAR(TOSHI_KBN)) = ''
-              OR (TOSHI_KBN = '01' AND MGN = 0)
-              OR BOKA_ZD_YEN = 0
-            THEN 1
-            ELSE 0
-        END AS SCREEN_TARGET
-
-    FROM MAIN_K.SILVER.T456SMMA030
-    WHERE KIJUN_YM = '202605'
-      AND RONRI_SAKUJO_FLG = '0'
-      AND HOJINDM_KAMOKU_CD = 'BOND'
-      AND SHUBETSU IN ('国内債券', '国内外国債券')
-),
-STATS AS (
-    SELECT
-        TEST_KBN,
-        COUNT(*) AS DATA_COUNT,
-        COALESCE(
-            COUNT_IF(SCREEN_TARGET = 1), 0
-        ) AS SCREEN_COUNT
-    FROM BASE
-    GROUP BY TEST_KBN
-),
-CANDIDATES AS (
-    SELECT
-        *,
-        ROW_NUMBER() OVER (
-            PARTITION BY TEST_KBN
-            ORDER BY
-                CASE WHEN KANRI_TENBAN IS NULL
-                     THEN 1 ELSE 0 END,
-                KIJUN_YM DESC,
-                MEIGARA_CD
-        ) AS RN
-    FROM BASE
-    WHERE SCREEN_TARGET = 1
-)
 SELECT
     '月次' AS DATA_SOURCE,
-    S.TEST_KBN,
-    S.DATA_COUNT,
-    ROUND(
-        S.DATA_COUNT * 100.0 /
-        NULLIF(SUM(S.DATA_COUNT) OVER (), 0),
-        2
-    ) AS PERCENT,
-    S.SCREEN_COUNT,
-    C.KIJUN_YM,
-    C.MEIGARA_CD,
-    C.KANRI_TENBAN,
-    C.HOJIN_NO,
-    C.TOSHI_KBN,
-    C.MGN,
-    C.BOKA_ZD_YEN
-FROM STATS S
-LEFT JOIN CANDIDATES C
-    ON S.TEST_KBN = C.TEST_KBN
-   AND C.RN <= 5
-ORDER BY S.TEST_KBN, C.RN;
+    KIJUN_YM AS KIJUN,
+    MEIGARA_CD,
+    KANRI_TEMBAN,
+    HOJIN_NO,
+    TOSHI_KBN,
+    MGN,
+    BOKA_ZD_YEN
+FROM MAIN_K.SILVER.T456SMMA030
+WHERE KIJUN_YM = '202605'
+  AND RONRI_SAKUJO_FLG = '0'
+  AND HOJINDM_KAMOKU_CD = 'BOND'
+  AND SHUBETSU IN ('国内債券', '国内外国債券')
+  AND NULLIF(TRIM(HOJIN_NO), '') IS NOT NULL
+  AND TRIM(HOJIN_NO) <> '000000'
 
-
-
-
-
-
-SELECT
-    TABLE_NAME,
-    COLUMN_NAME,
-    DATA_TYPE
-FROM MAIN_K.INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'SILVER'
-  AND TABLE_NAME IN (
-      'T456SMDA030',
-      'T456SMMA030'
-  )
-  AND (
-       COLUMN_NAME ILIKE '%KANRI%'
-    OR COLUMN_NAME ILIKE '%HOJIN%'
-    OR COLUMN_NAME ILIKE '%MEIGARA%'
-    OR COLUMN_NAME ILIKE '%TOSHI%'
-    OR COLUMN_NAME ILIKE '%MGN%'
-    OR COLUMN_NAME ILIKE '%BOKA%'
-    OR COLUMN_NAME ILIKE '%KIJUN%'
-  )
-ORDER BY TABLE_NAME, COLUMN_NAME;
-
-
+ORDER BY DATA_SOURCE, KIJUN DESC, MEIGARA_CD;
