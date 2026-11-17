@@ -1,4 +1,169 @@
 
+-- ITb_40 債券「最新」表示データ調査
+-- 日次・月次を統合して件数と法人番号登録状況を集計
+
+WITH DAILY_MAX AS (
+    SELECT
+        MEIGARA_CD,
+        MAX(KIJUN_YMD) AS KIJUN_YMD
+    FROM MAIN_K.SILVER.T456SMDA030
+    WHERE KIJUN_YMD <= '20260606'
+    GROUP BY MEIGARA_CD
+),
+
+MONTHLY_MAX AS (
+    SELECT
+        MEIGARA_CD,
+        MAX(KIJUN_YM) AS KIJUN_YM
+    FROM MAIN_K.SILVER.T456SMMA030
+    WHERE KIJUN_YM <= '202605'
+    GROUP BY MEIGARA_CD
+),
+
+SOURCE_DATA AS (
+    -- 日次データ
+    SELECT
+        '日次' AS DATA_SOURCE,
+        D.KIJUN_YMD,
+        D.MEIGARA_CD,
+        D.KANRI_TEMBAN,
+        D.HOJIN_NO,
+        D.TOSHI_KBN,
+        D.MGN,
+        D.BOKA_ZD_YEN
+    FROM MAIN_K.SILVER.T456SMDA030 D
+    INNER JOIN DAILY_MAX M
+        ON D.MEIGARA_CD = M.MEIGARA_CD
+       AND D.KIJUN_YMD = M.KIJUN_YMD
+    WHERE D.RONRI_SAKUJO_FLG = '0'
+      AND D.HOJINDM_KAMOKU_CD = 'BOND'
+      AND D.SHUBETSU IN (
+          '国内債券', '国内外国債券'
+      )
+
+    UNION ALL
+
+    -- 月次データ
+    SELECT
+        '月次' AS DATA_SOURCE,
+        TO_CHAR(
+            LAST_DAY(
+                TO_DATE(D.KIJUN_YM || '01', 'YYYYMMDD')
+            ),
+            'YYYYMMDD'
+        ) AS KIJUN_YMD,
+        D.MEIGARA_CD,
+        D.KANRI_TEMBAN,
+        D.HOJIN_NO,
+        D.TOSHI_KBN,
+        D.MGN,
+        D.BOKA_ZD_YEN
+    FROM MAIN_K.SILVER.T456SMMA030 D
+    INNER JOIN MONTHLY_MAX M
+        ON D.MEIGARA_CD = M.MEIGARA_CD
+       AND D.KIJUN_YM = M.KIJUN_YM
+    WHERE D.RONRI_SAKUJO_FLG = '0'
+      AND D.HOJINDM_KAMOKU_CD = 'BOND'
+      AND D.SHUBETSU IN (
+          '国内債券', '国内外国債券'
+      )
+),
+
+CHECK_DATA AS (
+    SELECT
+        *,
+        CASE
+            WHEN HOJIN_NO IS NULL
+              OR TRIM(HOJIN_NO) IN ('', '000000')
+            THEN 1
+            ELSE 0
+        END AS IS_UNREGISTERED,
+
+        CASE
+            WHEN HOJIN_NO IS NULL
+              OR TRIM(HOJIN_NO) IN ('', '000000')
+              OR TOSHI_KBN IS NULL
+              OR TRIM(TOSHI_KBN) = ''
+              OR (TOSHI_KBN = '01' AND MGN = 0)
+              OR BOKA_ZD_YEN = 0
+            THEN 1
+            ELSE 0
+        END AS SCREEN_OK
+    FROM SOURCE_DATA
+),
+
+DISPLAY_DATA AS (
+    SELECT *
+    FROM CHECK_DATA
+    WHERE SCREEN_OK = 1
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY MEIGARA_CD
+        ORDER BY
+            KIJUN_YMD DESC,
+            CASE WHEN DATA_SOURCE = '日次'
+                 THEN 0 ELSE 1 END
+    ) = 1
+),
+
+RESULT AS (
+    SELECT
+        '最新_合計' AS DATA_KBN,
+        COUNT(*) AS DISPLAY_COUNT,
+        COALESCE(COUNT_IF(IS_UNREGISTERED = 1), 0)
+            AS UNREGISTERED_COUNT,
+        COALESCE(COUNT_IF(IS_UNREGISTERED = 0), 0)
+            AS REGISTERED_COUNT
+    FROM DISPLAY_DATA
+
+    UNION ALL
+
+    SELECT
+        '最新_日次',
+        COUNT(*),
+        COALESCE(COUNT_IF(IS_UNREGISTERED = 1), 0),
+        COALESCE(COUNT_IF(IS_UNREGISTERED = 0), 0)
+    FROM DISPLAY_DATA
+    WHERE DATA_SOURCE = '日次'
+
+    UNION ALL
+
+    SELECT
+        '最新_月次',
+        COUNT(*),
+        COALESCE(COUNT_IF(IS_UNREGISTERED = 1), 0),
+        COALESCE(COUNT_IF(IS_UNREGISTERED = 0), 0)
+    FROM DISPLAY_DATA
+    WHERE DATA_SOURCE = '月次'
+)
+
+SELECT
+    DATA_KBN,
+    DISPLAY_COUNT,
+    UNREGISTERED_COUNT,
+    REGISTERED_COUNT,
+    ROUND(
+        UNREGISTERED_COUNT * 100.0 /
+        NULLIF(DISPLAY_COUNT, 0), 2
+    ) AS UNREGISTERED_PERCENT,
+    ROUND(
+        REGISTERED_COUNT * 100.0 /
+        NULLIF(DISPLAY_COUNT, 0), 2
+    ) AS REGISTERED_PERCENT
+FROM RESULT
+ORDER BY
+    CASE DATA_KBN
+        WHEN '最新_合計' THEN 1
+        WHEN '最新_日次' THEN 2
+        ELSE 3
+    END;
+
+
+
+
+
+
+
+
 -- ITb_40 既存法人番号データの表示条件確認
 
 WITH BASE AS (
@@ -67,75 +232,3 @@ ORDER BY DATA_SOURCE, KIJUN DESC, MEIGARA_CD;
 
 
 
-
-
-
-
-
-
-
--- ITb_40 既存法人番号データの表示条件確認
-
-WITH BASE AS (
-    SELECT
-        '日次' AS DATA_SOURCE,
-        KIJUN_YMD AS KIJUN,
-        MEIGARA_CD,
-        KANRI_TEMBAN,
-        HOJIN_NO,
-        TOSHI_KBN,
-        MGN,
-        BOKA_ZD_YEN
-    FROM MAIN_K.SILVER.T456SMDA030
-    WHERE KIJUN_YMD <= '20260606'
-      AND RONRI_SAKUJO_FLG = '0'
-      AND HOJINDM_KAMOKU_CD = 'BOND'
-      AND SHUBETSU IN (
-          '国内債券', '国内外国債券'
-      )
-      AND NULLIF(TRIM(HOJIN_NO), '') IS NOT NULL
-      AND TRIM(HOJIN_NO) <> '000000'
-
-    UNION ALL
-
-    SELECT
-        '月次' AS DATA_SOURCE,
-        KIJUN_YM AS KIJUN,
-        MEIGARA_CD,
-        KANRI_TEMBAN,
-        HOJIN_NO,
-        TOSHI_KBN,
-        MGN,
-        BOKA_ZD_YEN
-    FROM MAIN_K.SILVER.T456SMMA030
-    WHERE KIJUN_YM = '202605'
-      AND RONRI_SAKUJO_FLG = '0'
-      AND HOJINDM_KAMOKU_CD = 'BOND'
-      AND SHUBETSU IN (
-          '国内債券', '国内外国債券'
-      )
-      AND NULLIF(TRIM(HOJIN_NO), '') IS NOT NULL
-      AND TRIM(HOJIN_NO) <> '000000'
-)
-
-SELECT
-    DATA_SOURCE,
-    KIJUN,
-    MEIGARA_CD,
-    KANRI_TEMBAN,
-    HOJIN_NO,
-    TOSHI_KBN,
-    MGN,
-    BOKA_ZD_YEN,
-
-    CASE
-        WHEN TOSHI_KBN IS NULL
-          OR TRIM(TOSHI_KBN) = ''
-          OR (TOSHI_KBN = '01' AND MGN = 0)
-          OR BOKA_ZD_YEN = 0
-        THEN '表示対象'
-        ELSE '表示対象外'
-    END AS SCREEN_RESULT
-
-FROM BASE
-ORDER BY DATA_SOURCE, KIJUN DESC, MEIGARA_CD;
