@@ -1,5 +1,215 @@
-「最新」選択時、画面上には797件のデータが表示されています。
+WITH DAILY AS (
+    SELECT *
+    FROM MAIN_K.SILVER.T456SMDA040
+    WHERE KIJUN_YMD <= '20260606'
+      AND RONRI_SAKUJO_FLG = '0'
+    QUALIFY KIJUN_YMD = MAX(KIJUN_YMD)
+        OVER (PARTITION BY MEIGARA_CD)
+),
+MONTHLY AS (
+    SELECT *
+    FROM MAIN_K.SILVER.T456SMMA040
+    WHERE KIJUN_YM = '202605'
+      AND RONRI_SAKUJO_FLG = '0'
+    QUALIFY KIJUN_YM = MAX(KIJUN_YM)
+        OVER (PARTITION BY MEIGARA_CD)
+),
+BASE AS (
+    SELECT '日次' AS DATA_SOURCE, HOJIN_NO
+    FROM DAILY
+    UNION ALL
+    SELECT '月次', HOJIN_NO
+    FROM MONTHLY
+)
+SELECT
+    DATA_SOURCE,
+    COUNT(*) AS TOTAL_COUNT,
+    COUNT_IF(
+        HOJIN_NO IS NULL
+        OR HOJIN_NO IN ('', '000000')
+    ) AS INITIAL_COUNT,
+    COUNT_IF(
+        HOJIN_NO IS NOT NULL
+        AND HOJIN_NO NOT IN ('', '000000')
+    ) AS NUMBER_EXISTS_COUNT,
+    ROUND(
+        COUNT_IF(
+            HOJIN_NO IS NULL
+            OR HOJIN_NO IN ('', '000000')
+        ) * 100.0 / NULLIF(COUNT(*), 0),
+        2
+    ) AS INITIAL_PERCENT
+FROM BASE
+GROUP BY DATA_SOURCE
+ORDER BY DATA_SOURCE;
 
-一方、日次・月次テーブルのデータを確認した結果、法人番号が登録済みのデータは存在するものの、画面の抽出条件に該当せず、一覧に表示されないことを確認しました。
 
-そのため、現在の表示データからは、既存法人番号の変更試験に使用できる候補データを取得できない状況です。
+
+
+
+
+
+WITH DAILY_MAX_KIJUN_YMD AS (
+    SELECT
+        MEIGARA_CD,
+        MAX(KIJUN_YMD) AS KIJUN_YMD
+    FROM MAIN_K.SILVER.T456SMDA040
+    WHERE KIJUN_YMD <= '20260606'
+      AND RONRI_SAKUJO_FLG = '0'
+    GROUP BY MEIGARA_CD
+),
+MONTH_MAX_KIJUN_YM AS (
+    SELECT
+        MEIGARA_CD,
+        MAX(KIJUN_YM) AS KIJUN_YM
+    FROM MAIN_K.SILVER.T456SMMA040
+    WHERE RONRI_SAKUJO_FLG = '0'
+      AND KIJUN_YM = TO_CHAR(
+          DATEADD(
+              month, -1,
+              TO_DATE('20260606', 'YYYYMMDD')
+          ),
+          'YYYYMM'
+      )
+    GROUP BY MEIGARA_CD
+),
+BASE AS (
+    SELECT
+        D.KIJUN_YMD,
+        D.KANRI_TENBAN,
+        D.MEIGARA_CD,
+        D.HOJIN_NO,
+        D.KANJO_CD,
+        D.TSUKA_CD,
+        D.MEIGARA_NAME,
+        'DAILY' AS TABLE_KBN
+    FROM MAIN_K.SILVER.T456SMDA040 D
+    INNER JOIN DAILY_MAX_KIJUN_YMD X
+        ON D.MEIGARA_CD = X.MEIGARA_CD
+       AND D.KIJUN_YMD = X.KIJUN_YMD
+    WHERE D.RONRI_SAKUJO_FLG = '0'
+      AND (
+          D.HOJIN_NO IN ('', '000000')
+          OR D.HOJIN_NO IS NULL
+      )
+
+    UNION
+
+    SELECT
+        TO_CHAR(
+            LAST_DAY(
+                TO_DATE(M.KIJUN_YM || '01', 'YYYYMMDD')
+            ),
+            'YYYYMMDD'
+        ) AS KIJUN_YMD,
+        M.KANRI_TENBAN,
+        M.MEIGARA_CD,
+        M.HOJIN_NO,
+        M.KANJO_CD,
+        M.TSUKA_CD,
+        M.MEIGARA_NAME,
+        'MONTH' AS TABLE_KBN
+    FROM MAIN_K.SILVER.T456SMMA040 M
+    INNER JOIN MONTH_MAX_KIJUN_YM X
+        ON M.MEIGARA_CD = X.MEIGARA_CD
+       AND M.KIJUN_YM = X.KIJUN_YM
+    WHERE M.RONRI_SAKUJO_FLG = '0'
+      AND (
+          M.HOJIN_NO IN ('', '000000')
+          OR M.HOJIN_NO IS NULL
+      )
+),
+FINAL_RESULT AS (
+    SELECT *
+    FROM BASE
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY MEIGARA_CD
+        ORDER BY KIJUN_YMD DESC
+    ) = 1
+),
+STATS AS (
+    SELECT
+        '合并前' AS STEP,
+        TABLE_KBN,
+        COUNT(*) AS DATA_COUNT
+    FROM BASE
+    GROUP BY TABLE_KBN
+
+    UNION ALL
+
+    SELECT
+        '画面显示' AS STEP,
+        TABLE_KBN,
+        COUNT(*) AS DATA_COUNT
+    FROM FINAL_RESULT
+    GROUP BY TABLE_KBN
+)
+SELECT
+    STEP,
+    TABLE_KBN,
+    DATA_COUNT,
+    ROUND(
+        DATA_COUNT * 100.0 /
+        NULLIF(SUM(DATA_COUNT) OVER (PARTITION BY STEP), 0),
+        2
+    ) AS PERCENT,
+    SUM(DATA_COUNT) OVER (
+        PARTITION BY STEP
+    ) AS TOTAL_COUNT
+FROM STATS
+ORDER BY STEP, TABLE_KBN;
+
+
+
+
+
+
+SELECT
+    TABLE_KBN,
+    KIJUN_YMD,
+    MEIGARA_CD,
+    MEIGARA_NAME,
+    KANRI_TENBAN,
+    HOJIN_NO,
+    KANJO_CD,
+    TSUKA_CD
+FROM FINAL_RESULT
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY TABLE_KBN
+    ORDER BY MEIGARA_CD
+) <= 10
+ORDER BY TABLE_KBN, MEIGARA_CD;
+
+
+
+SELECT
+    TABLE_KBN,
+    COUNT(*) AS TOTAL_COUNT,
+
+    COUNT_IF(HOJIN_NO IS NULL)
+        AS HOJIN_NULL_COUNT,
+
+    COUNT_IF(HOJIN_NO = '')
+        AS HOJIN_EMPTY_COUNT,
+
+    COUNT_IF(HOJIN_NO = '000000')
+        AS HOJIN_ZERO_COUNT,
+
+    COUNT_IF(
+        KANRI_TENBAN IS NULL
+        OR TRIM(KANRI_TENBAN) = ''
+    ) AS KANRI_EMPTY_COUNT,
+
+    COUNT_IF(
+        KANJO_CD IS NULL
+        OR TRIM(KANJO_CD) = ''
+    ) AS KANJO_EMPTY_COUNT,
+
+    COUNT_IF(
+        TSUKA_CD IS NULL
+        OR TRIM(TSUKA_CD) = ''
+    ) AS TSUKA_EMPTY_COUNT
+
+FROM FINAL_RESULT
+GROUP BY TABLE_KBN
+ORDER BY TABLE_KBN;
