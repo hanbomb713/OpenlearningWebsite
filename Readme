@@ -1,7 +1,178 @@
-外部設計書では画面項目名を「基準日」と記載していますが、実際の選択肢リストは、取引先属性（名寄法人属性）_月次テーブル（T456SMMD010）の「基準年月（KIJUN_YM）」を元に作成しています。
 
-取得した基準年月の重複を除外し、降順に並べた結果を「基準日」の選択肢リストとして設定しています。
+-- ITb_40 債券 日次データ分析
+-- 初回登録・変更候補の件数、割合、サンプルを取得
 
-「最新」から「月末・期末」に切り替えた際は、この選択肢リストの先頭項目を初期選択値として設定する実装としました。
+WITH BASE AS (
+    SELECT
+        KIJUN_YMD,
+        MEIGARA_CD,
+        KANRI_TENBAN,
+        HOJIN_NO,
+        TOSHI_KBN,
+        MGN,
+        BOKA_ZD_YEN,
 
-そのため、初期選択値は現在日付から算出した前月（2026/10）に固定されるものではなく、取得した選択肢リストの先頭の値となります。
+        CASE
+            WHEN HOJIN_NO IS NULL
+              OR TRIM(TO_VARCHAR(HOJIN_NO))
+                 IN ('', '000000')
+            THEN '初回登録'
+            ELSE '変更'
+        END AS TEST_KBN,
+
+        -- 初回登録画面の抽出条件
+        CASE
+            WHEN HOJIN_NO IS NULL
+              OR TRIM(TO_VARCHAR(HOJIN_NO))
+                 IN ('', '000000')
+              OR TOSHI_KBN IS NULL
+              OR TRIM(TO_VARCHAR(TOSHI_KBN)) = ''
+              OR (TOSHI_KBN = '01' AND MGN = 0)
+              OR BOKA_ZD_YEN = 0
+            THEN 1
+            ELSE 0
+        END AS SCREEN_TARGET
+
+    FROM MAIN_K.SILVER.T456SMDA030
+    WHERE KIJUN_YMD <= '20260606'
+      AND RONRI_SAKUJO_FLG = '0'
+      AND HOJINDM_KAMOKU_CD = 'BOND'
+      AND SHUBETSU IN ('国内債券', '国内外国債券')
+),
+STATS AS (
+    SELECT
+        TEST_KBN,
+        COUNT(*) AS DATA_COUNT,
+        COALESCE(
+            COUNT_IF(SCREEN_TARGET = 1), 0
+        ) AS SCREEN_COUNT
+    FROM BASE
+    GROUP BY TEST_KBN
+),
+CANDIDATES AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY TEST_KBN
+            ORDER BY
+                CASE WHEN KANRI_TENBAN IS NULL
+                     THEN 1 ELSE 0 END,
+                KIJUN_YMD DESC,
+                MEIGARA_CD
+        ) AS RN
+    FROM BASE
+    WHERE SCREEN_TARGET = 1
+)
+SELECT
+    '日次' AS DATA_SOURCE,
+    S.TEST_KBN,
+    S.DATA_COUNT,
+    ROUND(
+        S.DATA_COUNT * 100.0 /
+        NULLIF(SUM(S.DATA_COUNT) OVER (), 0),
+        2
+    ) AS PERCENT,
+    S.SCREEN_COUNT,
+    C.KIJUN_YMD,
+    C.MEIGARA_CD,
+    C.KANRI_TENBAN,
+    C.HOJIN_NO,
+    C.TOSHI_KBN,
+    C.MGN,
+    C.BOKA_ZD_YEN
+FROM STATS S
+LEFT JOIN CANDIDATES C
+    ON S.TEST_KBN = C.TEST_KBN
+   AND C.RN <= 5
+ORDER BY S.TEST_KBN, C.RN;
+
+
+
+
+
+-- ITb_40 債券 月次データ分析
+-- 初回登録・変更候補の件数、割合、サンプルを取得
+
+WITH BASE AS (
+    SELECT
+        KIJUN_YM,
+        MEIGARA_CD,
+        KANRI_TENBAN,
+        HOJIN_NO,
+        TOSHI_KBN,
+        MGN,
+        BOKA_ZD_YEN,
+
+        CASE
+            WHEN HOJIN_NO IS NULL
+              OR TRIM(TO_VARCHAR(HOJIN_NO))
+                 IN ('', '000000')
+            THEN '初回登録'
+            ELSE '変更'
+        END AS TEST_KBN,
+
+        CASE
+            WHEN HOJIN_NO IS NULL
+              OR TRIM(TO_VARCHAR(HOJIN_NO))
+                 IN ('', '000000')
+              OR TOSHI_KBN IS NULL
+              OR TRIM(TO_VARCHAR(TOSHI_KBN)) = ''
+              OR (TOSHI_KBN = '01' AND MGN = 0)
+              OR BOKA_ZD_YEN = 0
+            THEN 1
+            ELSE 0
+        END AS SCREEN_TARGET
+
+    FROM MAIN_K.SILVER.T456SMMA030
+    WHERE KIJUN_YM = '202605'
+      AND RONRI_SAKUJO_FLG = '0'
+      AND HOJINDM_KAMOKU_CD = 'BOND'
+      AND SHUBETSU IN ('国内債券', '国内外国債券')
+),
+STATS AS (
+    SELECT
+        TEST_KBN,
+        COUNT(*) AS DATA_COUNT,
+        COALESCE(
+            COUNT_IF(SCREEN_TARGET = 1), 0
+        ) AS SCREEN_COUNT
+    FROM BASE
+    GROUP BY TEST_KBN
+),
+CANDIDATES AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY TEST_KBN
+            ORDER BY
+                CASE WHEN KANRI_TENBAN IS NULL
+                     THEN 1 ELSE 0 END,
+                KIJUN_YM DESC,
+                MEIGARA_CD
+        ) AS RN
+    FROM BASE
+    WHERE SCREEN_TARGET = 1
+)
+SELECT
+    '月次' AS DATA_SOURCE,
+    S.TEST_KBN,
+    S.DATA_COUNT,
+    ROUND(
+        S.DATA_COUNT * 100.0 /
+        NULLIF(SUM(S.DATA_COUNT) OVER (), 0),
+        2
+    ) AS PERCENT,
+    S.SCREEN_COUNT,
+    C.KIJUN_YM,
+    C.MEIGARA_CD,
+    C.KANRI_TENBAN,
+    C.HOJIN_NO,
+    C.TOSHI_KBN,
+    C.MGN,
+    C.BOKA_ZD_YEN
+FROM STATS S
+LEFT JOIN CANDIDATES C
+    ON S.TEST_KBN = C.TEST_KBN
+   AND C.RN <= 5
+ORDER BY S.TEST_KBN, C.RN;
+
